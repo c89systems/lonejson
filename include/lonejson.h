@@ -188,8 +188,8 @@ extern "C" {
  *
  * The project home, release artifacts, and full example programs are at:
  *
- *   https://github.com/sa6mwa/lonejson
- *   https://github.com/sa6mwa/lonejson/tree/trunk/examples
+ *   https://github.com/c89systems/lonejson
+ *   https://github.com/c89systems/lonejson/tree/trunk/examples
  *
  * In the normal linked-library build, include this header and link
  * `liblonejson`:

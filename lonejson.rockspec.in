@@ -11,7 +11,7 @@ description = {
 Lua binding for lonejson with runtime-compiled schemas, reusable records,
 object-framed streams, and spool-backed large field support.
 ]],
-  homepage = "https://github.com/sa6mwa/lonejson",
+  homepage = "https://github.com/c89systems/lonejson",
   license = "MIT",
 }
 dependencies = {

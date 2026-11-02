@@ -16,8 +16,8 @@ serialize through that schema. That approach gives the library its character:
 it is strongly typed, stream-oriented, and deliberate about ownership and
 allocation.
 
-Repository: <https://github.com/sa6mwa/lonejson>  
-Examples: <https://github.com/sa6mwa/lonejson/tree/trunk/examples>
+Repository: <https://github.com/c89systems/lonejson>\
+Examples: <https://github.com/c89systems/lonejson/tree/trunk/examples>
 
 ## Use-case
 
@@ -1302,7 +1302,7 @@ string/file/JSONL serialization, optional curl integration, and the Lua binding.
 
 Online:
 
-- <https://github.com/sa6mwa/lonejson/tree/trunk/examples>
+- <https://github.com/c89systems/lonejson/tree/trunk/examples>
 
 ## Release artifacts
 
