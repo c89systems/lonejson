@@ -61,9 +61,29 @@ export EXPECTED_PAYLOAD="$fixture/dist" EXPECTED_SCOPE=binary
 "$fixture/scripts/package-verify.sh" --binary
 cmp "$work/expected" "$VERIFY_EVENTS"
 
+# A binary-scope manifest remains under build/ when its payload is external.
+cmake -D "LONEJSON_ROOT=$fixture" -D LONEJSON_VERSION=1.2.3 \
+  -D "LONEJSON_DIST_DIR=$custom" -D LONEJSON_RELEASE_TARGETS=x86_64-linux-gnu \
+  -D LONEJSON_CHECKSUM_SCOPE=binary -P "$fixture/cmake/package_checksums.cmake"
+: >"$VERIFY_EVENTS"
+export EXPECTED_PAYLOAD="$custom"
+LONEJSON_DIST_DIR="$custom" "$fixture/scripts/package-verify.sh" --binary
+cmp "$work/expected" "$VERIFY_EVENTS"
+: >"$VERIFY_EVENTS"
+mv "$custom/lonejson-1.2.3.h.gz" "$work/header.gz"
+if LONEJSON_DIST_DIR="$custom" "$fixture/scripts/package-verify.sh" --binary >"$work/missing" 2>&1; then
+  printf 'binary verification borrowed the default payload directory\n' >&2; exit 1
+fi
+grep -F 'missing or unsafe required release artifact' "$work/missing" >/dev/null
+[[ ! -s "$VERIFY_EVENTS" ]]
+mv "$work/header.gz" "$custom/lonejson-1.2.3.h.gz"
+make -s -n -C "$repo_root" package-verify-binary DIST_DIR="$custom" >"$work/make-plan"
+grep -F "LONEJSON_DIST_DIR=\"$custom\" ./scripts/package-verify.sh --binary" "$work/make-plan" >/dev/null
+
 # Direct callers use the same optional-Darwin default as Make/the matrix, in
 # both full/custom-directory and binary scopes. Exercise warm readiness changes.
 linux_targets='x86_64-linux-gnu;x86_64-linux-musl;aarch64-linux-gnu;aarch64-linux-musl;armhf-linux-gnu;armhf-linux-musl'
+export EXPECTED_PAYLOAD="$fixture/dist"
 for ready in 1 0 1; do
   targets=$linux_targets
   if [[ $ready == 1 ]]; then targets+=';arm64-apple-darwin'; fi

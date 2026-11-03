@@ -327,7 +327,12 @@ on another filesystem; packaging intermediates remain under `build/`.
 For a full upload in a custom directory, pass its checksum manifest to
 `scripts/package-verify.sh`; all verification stages use the manifest's directory
 as the payload directory. Binary preparation manifests remain under `build/`
-and refer to the checkout's `dist/` payload.
+and refer to the checkout's `dist/` payload by default. For a custom binary
+payload, use `LONEJSON_DIST_DIR=/absolute/artifacts scripts/package-verify.sh --binary`
+or `make package-verify-binary DIST_DIR=/absolute/artifacts` with the matching
+binary manifest already prepared. Full cleanup removes the checkout's default
+`dist/` as well as an explicitly selected custom directory; `--dist-only` removes
+only its selected directory.
 
 ## Artifact inventories and selected test scopes
 

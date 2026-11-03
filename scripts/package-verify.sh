@@ -11,8 +11,9 @@ if [[ "$scope" == binary && $# == 0 ]]; then
 fi
 checksums_dir=$(CDPATH= cd -- "$(dirname -- "$checksums")" && pwd -P)
 checksums="$checksums_dir/$(basename -- "$checksums")"
-dist_dir="$repo_root/dist"
+dist_dir=${LONEJSON_DIST_DIR:-$repo_root/dist}
 if [[ "$scope" == full ]]; then dist_dir=$checksums_dir; fi
+dist_dir=$(CDPATH= cd -- "$dist_dir" && pwd -P)
 if [[ ! ${LONEJSON_RELEASE_TARGETS+x} ]]; then
   LONEJSON_RELEASE_TARGETS='x86_64-linux-gnu;x86_64-linux-musl;aarch64-linux-gnu;aarch64-linux-musl;armhf-linux-gnu;armhf-linux-musl'
   if "$repo_root/scripts/osxcross_available.sh" >/dev/null 2>&1; then

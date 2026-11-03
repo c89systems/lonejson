@@ -417,7 +417,7 @@ package-verify:
 	./scripts/package-verify.sh "$(RELEASE_CHECKSUMS)"
 
 package-verify-binary:
-	./scripts/package-verify.sh --binary
+	LONEJSON_DIST_DIR="$(DIST_DIR)" ./scripts/package-verify.sh --binary
 
 verify-release-archives: package-verify
 
