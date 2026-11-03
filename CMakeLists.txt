@@ -857,7 +857,8 @@ if(LONEJSON_BUILD_TESTS)
   endif()
   get_property(lonejson_runtime_tests DIRECTORY PROPERTY TESTS)
   if(LONEJSON_BASH_EXECUTABLE)
-    foreach(case native_lua_ctest native_host_workflows native_test_prerequisites
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LonejsonLinuxPolicyTests.cmake")
+    foreach(case native_lua_ctest native_host_workflows native_test_prerequisites host_policy_scope
         selected_release_build package_verify_directory required_tool_discovery)
       add_test(NAME lonejson_${case}_tests
         COMMAND "${LONEJSON_BASH_EXECUTABLE}"
@@ -887,44 +888,9 @@ if(LONEJSON_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_fuzz_affinity.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(
-      NAME lonejson_discover_target_tools_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_discover_target_tools.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_compiler_selection_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compiler_selection.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
       NAME lonejson_native_darwin_toolchain_tests
       COMMAND "${LONEJSON_BASH_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_darwin_toolchain.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_bootlin_host_arch_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bootlin_host_arch.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_native_bootlin_target_tests
-      COMMAND "${CMAKE_COMMAND}"
-        -D LONEJSON_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_bootlin_target.cmake")
-    add_test(
-      NAME lonejson_native_bootlin_target_command_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_bootlin_target_command.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_cpkt_toolchain_resolver_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cpkt_toolchain_resolver.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_cpkt_aflpp_resolver_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cpkt_aflpp_resolver.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(
       NAME lonejson_lifecycle_preset_tests
@@ -985,43 +951,15 @@ if(LONEJSON_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cmake_threads_optional.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(
-      NAME lonejson_cmake_cpkt_root_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cmake_cpkt_root.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
       NAME lonejson_test_all_hardening_tests
       COMMAND "${LONEJSON_BASH_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_test_all_hardening.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_bootlin_tsan_support_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bootlin_tsan_support.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(
       NAME lonejson_msan_handle_probe_tests
       COMMAND "${LONEJSON_BASH_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_msan_handle_probes.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_cross_sanitizer_matrix_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cross_sanitizer_matrix.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND
-        CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
-      add_test(
-        NAME lonejson_cmake_fuzz_sanitizer_conflict_tests
-        COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-          "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cmake_fuzz_sanitizer_conflicts.sh"
-          "${CMAKE_CURRENT_SOURCE_DIR}")
-      add_test(
-        NAME lonejson_cmake_fuzz_auth_optional_tests
-        COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-          "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cmake_fuzz_auth_optional.sh"
-          "${CMAKE_CURRENT_SOURCE_DIR}")
-    endif()
     add_test(
       NAME lonejson_oidc_pkce_provider_no_openssl_tests
       COMMAND "${LONEJSON_BASH_EXECUTABLE}"
@@ -1070,18 +1008,6 @@ if(LONEJSON_BUILD_TESTS)
       COMMAND "${LONEJSON_BASH_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_artifact_verify.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_release_archive_verify_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_archive_verify.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(
-      NAME lonejson_lua_native_test_target_filter_tests
-      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lua_native_test_target_filter.sh"
-        "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${CMAKE_COMMAND}"
-        "${CMAKE_GENERATOR}")
     add_test(
       NAME lonejson_run_release_matrix_darwin_target_tests
       COMMAND "${LONEJSON_BASH_EXECUTABLE}"

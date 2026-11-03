@@ -59,7 +59,9 @@ require_release_werror() {
 
 require_release_werror src/lonejson.c
 require_release_werror tests/test_main.c
-require_release_werror src/lua/lonejson_lua.c
+if [[ $(uname -s) == Linux ]]; then
+  require_release_werror src/lua/lonejson_lua.c
+fi
 
 case "$(uname -s)" in
   Darwin) linker_warning_flag=-Wl,-fatal_warnings ;;

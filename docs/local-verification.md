@@ -345,6 +345,10 @@ CTest labels host policy fixtures `host-policy`; matrix and hardening selections
 exclude that label while retaining target runtime, exports, strict headers,
 linking, versions, and metadata checks. Native Lua workflow fixtures require the
 prepared target runtime and fail if it is missing. They are not counted as skips.
+The Bootlin compiler, Linux SDK/ABI and Linux resolver fixtures are registered
+only on their supported Linux x86_64 provisioning host. Portable policy and
+native Darwin Lua checks remain available on Darwin; a CTest inventory fixture
+checks these platform boundaries without starting an incompatible compiler.
 
 Ordinary test presets exclude the `e2e` label. `make test-e2e` starts and probes
 the owned Podman pod, prepares the native fixture executables once, and runs the

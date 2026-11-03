@@ -173,11 +173,13 @@ armv7-eabihf--glibc--stable-2026.08-1|arm-linux|arm-buildroot-linux-gnueabihf
 armv7-eabihf--musl--stable-2026.08-1|arm-linux|arm-buildroot-linux-musleabihf
 EOF
 
-preflight_output="$(PATH="$fake_bin:/usr/bin:/bin" \
-  CPKT_TOOLCHAIN_CACHE="$toolchain_cache" \
-  LONEJSON_RELEASE_MATRIX_PREFLIGHT_ONLY=1 \
-  "$matrix_script_path")"
-printf '%s\n' "$preflight_output" | grep -Fx 'Release matrix preflight completed successfully.' >/dev/null
+if [[ $(uname -s):$(uname -m) == Linux:x86_64 ]]; then
+  preflight_output="$(PATH="$fake_bin:/usr/bin:/bin" \
+    CPKT_TOOLCHAIN_CACHE="$toolchain_cache" \
+    LONEJSON_RELEASE_MATRIX_PREFLIGHT_ONLY=1 \
+    "$matrix_script_path")"
+  printf '%s\n' "$preflight_output" | grep -Fx 'Release matrix preflight completed successfully.' >/dev/null
+fi
 
 # Execute the actual matrix selections through CTest and the shipped presets.
 # Only runtime may run: policy and service cases fail if a filter leaks them.
