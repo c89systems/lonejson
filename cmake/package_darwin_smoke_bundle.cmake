@@ -257,9 +257,8 @@ endforeach()
 
 set(staged_smoke_archive "${bundle_root}/${stage_name}.zip")
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" -E tar cf "${staged_smoke_archive}" --format=zip
-          "${stage_name}"
-  WORKING_DIRECTORY "${bundle_root}"
+  COMMAND "${LONEJSON_ROOT}/scripts/archive_release_tree.sh"
+          "${stage_root}" "${staged_smoke_archive}"
   RESULT_VARIABLE zip_result
   OUTPUT_VARIABLE zip_stdout
   ERROR_VARIABLE zip_stderr)

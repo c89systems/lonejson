@@ -364,10 +364,8 @@ $(RELEASE_PACK_DIR):
 $(RELEASE_PACK_STAGE_DIR): Makefile $(LUA_ROCK_SOURCES) | $(RELEASE_PACK_DIR)
 	./scripts/stage_lua_rock_sources.sh "$(CURDIR)" "$(RELEASE_PACK_STAGE_DIR)" "$(RELEASE_VERSION)"
 
-$(RELEASE_LUA_SOURCE_TARBALL): $(RELEASE_PACK_STAGE_DIR) | $(DIST_DIR)
-	rm -f "$(RELEASE_PACK_DIR)/lonejson-lua-$(RELEASE_VERSION).tar"
-	cd "$(RELEASE_PACK_DIR)" && tar -cf "lonejson-lua-$(RELEASE_VERSION).tar" "lonejson-$(RELEASE_VERSION)"
-	gzip -n -9 -f "$(RELEASE_PACK_DIR)/lonejson-lua-$(RELEASE_VERSION).tar"
+$(RELEASE_LUA_SOURCE_TARBALL): $(RELEASE_PACK_STAGE_DIR) scripts/archive_release_tree.sh | $(DIST_DIR)
+	./scripts/archive_release_tree.sh "$(RELEASE_PACK_STAGE_DIR)" "$(RELEASE_PACK_DIR)/lonejson-lua-$(RELEASE_VERSION).tar.gz"
 	mv "$(RELEASE_PACK_DIR)/lonejson-lua-$(RELEASE_VERSION).tar.gz" "$(RELEASE_LUA_SOURCE_TARBALL)"
 
 $(RELEASE_ROCKSPEC): Makefile lonejson.rockspec.in scripts/render_release_rockspec.sh | $(DIST_DIR)

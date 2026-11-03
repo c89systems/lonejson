@@ -859,7 +859,8 @@ if(LONEJSON_BUILD_TESTS)
   if(LONEJSON_BASH_EXECUTABLE)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LonejsonLinuxPolicyTests.cmake")
     foreach(case native_lua_ctest native_host_workflows native_test_prerequisites host_policy_scope
-        selected_release_build package_verify_directory required_tool_discovery)
+        selected_release_build package_verify_directory required_tool_discovery
+        release_archive_reproducibility)
       add_test(NAME lonejson_${case}_tests
         COMMAND "${LONEJSON_BASH_EXECUTABLE}"
           "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_${case}.sh"

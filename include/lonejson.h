@@ -1,8 +1,8 @@
 /*
  * MIT License
  *
- * lonejson is Copyright (c) 2026 Michel Blomgren <mike@pkt.systems>
- * https://pkt.systems
+ * lonejson is Copyright (c) 2026 Michel Blomgren <mike@c89.systems>
+ * https://c89.systems
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

@@ -324,6 +324,12 @@ cleanup. The default `dist/` must be a real directory; a symlink is rejected.
 Explicit custom artifact destinations retain their ownership-marker policy.
 Completed artifacts are copied to their final destinations, including those
 on another filesystem; packaging intermediates remain under `build/`.
+Tree archives use sorted entries, fixed 1980 UTC timestamps, normalized modes
+and numeric root ownership in tar headers. ZIP products omit workstation extra
+fields. Executable files, symlinks and empty directories retain their intended
+behavior. Normalization uses a disposable staging copy so unchanged Make
+prerequisites remain reusable. Linux static-library stripping also normalizes
+internal archive headers. Source rocks normalize their two embedded files.
 For a full upload in a custom directory, pass its checksum manifest to
 `scripts/package-verify.sh`; all verification stages use the manifest's directory
 as the payload directory. Binary preparation manifests remain under `build/`

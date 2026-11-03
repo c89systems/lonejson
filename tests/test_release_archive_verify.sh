@@ -655,6 +655,30 @@ LONEJSON_BOOTLIN_TOOLCHAIN_ROOT:PATH=$CPKT_TOOLCHAIN_ROOT
 LONEJSON_CPKT_ROOT:PATH=$dependency_root
 EOF
 
+# Exercise the SDK producer with this already-compiled fixture. Stripping must
+# normalize the static archive's internal headers as well as the outer tar.
+mkdir -p "$tmp_dir/scripts" "$tmp_dir/cmake" "$tmp_dir/tools/lifecycle/scripts"
+cp "$repo_root/scripts/"{archive_release_tree,require_build_workspace,discover_target_tools,cpkt-toolchains,cpkt-native-apple,require_cache_path}.sh "$tmp_dir/scripts/"
+cp "$repo_root/tools/lifecycle/scripts/"*.sh "$tmp_dir/tools/lifecycle/scripts/"
+cp "$repo_root/cmake/"{lonejson_build_workspace,lonejson_target_tools,lonejson_dist_dir,cpkt_metadata}.cmake "$tmp_dir/cmake/"
+cp "$repo_root/LICENSE" "$repo_root/README.md" "$tmp_dir/"
+cat >"$build_root/x86_64-linux-gnu-release/cmake_install.cmake" <<EOF
+file(COPY "$package_root/" DESTINATION "\${CMAKE_INSTALL_PREFIX}")
+EOF
+for mask in 022 077; do
+  (umask "$mask"; cmake -D "LONEJSON_ROOT=$tmp_dir" \
+    -D "LONEJSON_BINARY_DIR=$build_root/x86_64-linux-gnu-release" \
+    -D LONEJSON_VERSION=9.9.9 -D LONEJSON_TARGET_ID=x86_64-linux-gnu \
+    -D LONEJSON_SHARED_LIB_NAME=liblonejson.so -D LONEJSON_STATIC_LIB_NAME=liblonejson.a \
+    -D LONEJSON_BUILD_WITH_CURL=ON -D LONEJSON_BUILD_WITH_OPENSSL=ON \
+    -D LONEJSON_BUILD_WITH_JWT=ON -D LONEJSON_BUILD_WITH_OIDC=ON \
+    -P "$repo_root/cmake/package_archive.cmake")
+  cp "$dist_dir/liblonejson-9.9.9-x86_64-linux-gnu.tar.gz" "$tmp_dir/produced-$mask.tar.gz"
+done
+cmp "$tmp_dir/produced-022.tar.gz" "$tmp_dir/produced-077.tar.gz" || {
+  printf 'SDK producer changed shipped bytes with staging metadata\n' >&2; exit 1;
+}
+
 "$AR" rcs "$dependency_root/lib/libcurl.a"
 "$AR" rcs "$dependency_root/lib/libcrypto.a"
 cat >"$dependency_root/lib/pkgconfig/libcurl.pc" <<EOF

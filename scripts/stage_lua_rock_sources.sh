@@ -155,7 +155,7 @@ for path in "${files[@]}"; do
     exit 1
   fi
   mkdir -p "$stage_dir/$(dirname "$path")"
-  cp "$repo_root/$path" "$stage_dir/$path"
+  cp -p "$repo_root/$path" "$stage_dir/$path"
 done
 
 missing=0

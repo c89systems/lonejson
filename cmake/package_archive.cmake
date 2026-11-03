@@ -63,7 +63,8 @@ if(DEFINED LONEJSON_STRIP AND NOT LONEJSON_STRIP STREQUAL "")
       message(FATAL_ERROR "failed to strip ${packaged_shared_lib}")
     endif()
     execute_process(
-      COMMAND "${LONEJSON_STRIP}" "${strip_static_flag}" "${packaged_static_lib}"
+      COMMAND "${LONEJSON_STRIP}" --enable-deterministic-archives
+        "${strip_static_flag}" "${packaged_static_lib}"
       RESULT_VARIABLE strip_static_result
     )
     if(NOT strip_static_result EQUAL 0)
@@ -313,31 +314,13 @@ lonejson_prepare_dist_dir()
 set(archive_base "${package_stage_root}/${archive_name}.tar")
 set(archive "${LONEJSON_DIST_DIR}/${archive_name}.tar.gz")
 
-find_program(LONEJSON_TAR_BIN NAMES tar)
-find_program(LONEJSON_GZIP_BIN NAMES gzip)
-if(NOT LONEJSON_TAR_BIN)
-  message(FATAL_ERROR "failed to find tar for archive creation")
-endif()
-if(NOT LONEJSON_GZIP_BIN)
-  message(FATAL_ERROR "failed to find gzip for archive creation")
-endif()
-
-file(REMOVE "${archive_base}" "${archive_base}.gz")
 execute_process(
-  COMMAND "${LONEJSON_TAR_BIN}" -cf "${archive_base}" --format=gnu --owner=0 --group=0 "${archive_name}"
-  WORKING_DIRECTORY "${package_stage_root}"
+  COMMAND "${LONEJSON_ROOT}/scripts/archive_release_tree.sh"
+    "${package_root}" "${archive_base}.gz"
   RESULT_VARIABLE tar_result
 )
 if(NOT tar_result EQUAL 0)
   message(FATAL_ERROR "failed to create package tar archive")
-endif()
-
-execute_process(
-  COMMAND "${LONEJSON_GZIP_BIN}" -n -9 -f "${archive_base}"
-  RESULT_VARIABLE gzip_result
-)
-if(NOT gzip_result EQUAL 0)
-  message(FATAL_ERROR "failed to gzip package archive")
 endif()
 
 lonejson_publish_artifact("${archive_base}.gz" "${archive}")
