@@ -210,6 +210,12 @@ under `build/fuzz/afl/<target>/output/` for investigation.
 
 Use `make test` as the debug lifecycle gate.
 
+The native runtime suite includes `lonejson_worker_stack_tests`, which serializes
+nested records on a worker created with the platform's default thread attributes.
+Its document and output buffers live on the heap. The musl run checks the default
+128 KiB worker stack; unoptimized builds use ordinary inlining to avoid expanding
+recursive serializer frames. Optimized builds retain the existing forced inlining.
+
 `make test` is intentionally broader than raw CTest: it configures and builds
 the debug tree, stages standalone examples, runs the debug CTest preset, and
 then runs the full-feature Lua integration test through `make lua-test` on
