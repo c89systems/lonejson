@@ -103,6 +103,22 @@ if grep -F '  dir = ' "$tmp_dir/default.rockspec" >/dev/null; then
   exit 1
 fi
 
+# Exercise the public Make producer, including the optional-argument slots it
+# passes to the renderer. Its standalone spec must fetch the released archive.
+public_dist="$tmp_dir/public"
+public_spec="$public_dist/lonejson-1.2.3-1.rockspec"
+make -s -C "$repo_root" "$public_spec" DIST_DIR="$public_dist" RELEASE_VERSION=1.2.3
+lua_exec=$("$repo_root/scripts/resolve_lua55.sh")
+"$lua_exec" - "$public_spec" <<'LUA'
+local spec = {}
+assert(loadfile(arg[1], "t", spec))()
+assert(spec.source.url == "https://github.com/c89systems/lonejson/releases/download/v1.2.3/lonejson-lua-1.2.3.tar.gz",
+       "release rockspec must reference its public source archive")
+assert(spec.source.dir == "lonejson-1.2.3", "release archive directory must be explicit")
+assert(spec.source.tag == nil, "archive rockspec must not request a Git tag")
+LUA
+luarocks lint "$public_spec"
+
 while IFS= read -r staged_file; do
   rel_file=${staged_file#"$stage_dir"/}
   while IFS= read -r line; do

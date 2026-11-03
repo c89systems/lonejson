@@ -312,6 +312,13 @@ CTest Memcheck serially with a 30 minute timeout. Binary SDK manifests record
 curl and OpenSSL as external optional facade requirements; core libraries do
 not embed either dependency or require them for ordinary linking.
 
+Lua source products share one public rockspec whose HTTPS source URL names the
+release's `lonejson-lua-<version>.tar.gz` asset and its extracted directory.
+The source rock embeds that same rockspec and archive, allowing offline
+installation. Source staging remains under `build/` for incremental reuse;
+`make release-lua-artifacts` verifies the rock against a freshly prepared SDK
+on each invocation. Empty and local source URLs fail verification.
+
 CMake packaging validates physical ownership of each staging workspace before
 cleanup. The default `dist/` must be a real directory; a symlink is rejected.
 Explicit custom artifact destinations retain their ownership-marker policy.

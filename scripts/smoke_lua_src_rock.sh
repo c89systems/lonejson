@@ -67,6 +67,15 @@ if [[ "${#rockspecs[@]}" -ne 1 ]]; then
   exit 1
 fi
 
+"$lua_exec" - "${rockspecs[0]}" <<'LUA'
+local spec = {}
+assert(loadfile(arg[1], "t", spec))()
+local url = spec.source and spec.source.url
+assert(type(url) == "string" and
+       (url:match("^https://") or url:match("^git%+https://")),
+       "source rock must declare a public HTTPS source URL")
+LUA
+
 mapfile -t source_archives < <(
   find "$rock_unpack_dir" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' \) |
     LC_ALL=C sort

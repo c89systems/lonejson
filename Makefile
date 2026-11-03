@@ -63,7 +63,7 @@ RELEASE_ROCKSPEC := $(DIST_DIR)/lonejson-$(RELEASE_VERSION)-1.rockspec
 RELEASE_PACK_DIR := $(CURDIR)/build/packaging/lua
 RELEASE_PACK_STAGE_DIR := $(RELEASE_PACK_DIR)/lonejson-$(RELEASE_VERSION)
 RELEASE_LUA_SOURCE_TARBALL := $(DIST_DIR)/lonejson-lua-$(RELEASE_VERSION).tar.gz
-RELEASE_PACK_ROCKSPEC := $(RELEASE_PACK_DIR)/lonejson-$(RELEASE_VERSION)-1.rockspec
+RELEASE_LUA_SOURCE_URL := https://github.com/c89systems/lonejson/releases/download/v$(RELEASE_VERSION)/$(notdir $(RELEASE_LUA_SOURCE_TARBALL))
 RELEASE_ROCK := $(DIST_DIR)/lonejson-$(RELEASE_VERSION)-1.src.rock
 RELEASE_CHECKSUMS := $(DIST_DIR)/lonejson-$(RELEASE_VERSION)-CHECKSUMS
 PERF_CORPUS := tests/fixtures/vendor/json_test_suite/test_parsing
@@ -370,21 +370,17 @@ $(RELEASE_LUA_SOURCE_TARBALL): $(RELEASE_PACK_STAGE_DIR) | $(DIST_DIR)
 	gzip -n -9 -f "$(RELEASE_PACK_DIR)/lonejson-lua-$(RELEASE_VERSION).tar"
 	mv "$(RELEASE_PACK_DIR)/lonejson-lua-$(RELEASE_VERSION).tar.gz" "$(RELEASE_LUA_SOURCE_TARBALL)"
 
-$(RELEASE_ROCKSPEC): lonejson.rockspec.in scripts/render_release_rockspec.sh | $(DIST_DIR)
-	lib_ext="$$($(LUAROCKS) config variables.LIB_EXTENSION)"; ./scripts/render_release_rockspec.sh "$(RELEASE_VERSION)" "$(RELEASE_ROCKSPEC)" "" "" "$$lib_ext"
+$(RELEASE_ROCKSPEC): Makefile lonejson.rockspec.in scripts/render_release_rockspec.sh | $(DIST_DIR)
+	lib_ext="$$($(LUAROCKS) config variables.LIB_EXTENSION)"; ./scripts/render_release_rockspec.sh "$(RELEASE_VERSION)" "$(RELEASE_ROCKSPEC)" "$(RELEASE_LUA_SOURCE_URL)" "" "$$lib_ext" "lonejson-$(RELEASE_VERSION)"
 
-$(RELEASE_PACK_ROCKSPEC): Makefile $(RELEASE_LUA_SOURCE_TARBALL)
-	cd "$(RELEASE_PACK_STAGE_DIR)" && lib_ext="$$($(LUAROCKS) config variables.LIB_EXTENSION)" && ./scripts/render_release_rockspec.sh "$(RELEASE_VERSION)" "../$(notdir $(RELEASE_PACK_ROCKSPEC))" "file://$(notdir $(RELEASE_LUA_SOURCE_TARBALL))" "" "$$lib_ext" "lonejson-$(RELEASE_VERSION)"
+$(RELEASE_ROCK): $(RELEASE_LUA_SOURCE_TARBALL) $(RELEASE_ROCKSPEC) scripts/package_lua_src_rock.sh
+	./scripts/package_lua_src_rock.sh "$(RELEASE_ROCK)" "$(RELEASE_ROCKSPEC)" "$(RELEASE_LUA_SOURCE_TARBALL)"
 
-$(RELEASE_ROCK): $(RELEASE_PACK_ROCKSPEC) $(RELEASE_ROCKSPEC) scripts/package_lua_src_rock.sh scripts/smoke_lua_src_rock.sh | toolchains-host
-	./scripts/package_lua_src_rock.sh "$(RELEASE_ROCK)" "$(RELEASE_PACK_ROCKSPEC)" "$(RELEASE_LUA_SOURCE_TARBALL)"
+release-lua-artifacts: $(RELEASE_ROCKSPEC) $(RELEASE_LUA_SOURCE_TARBALL) $(RELEASE_ROCK) toolchains-host
 	cmake --preset $(DEBUG_PRESET) $(LONEJSON_CMAKE_RELEASE_ARGS)
 	cmake --build --preset $(DEBUG_PRESET) --target lonejson_shared lonejson_static
 	cmake --install "build/$(DEBUG_PRESET)" --prefix "$(CURDIR)/build/lua-sdk"
 	./scripts/smoke_lua_src_rock.sh "$(RELEASE_ROCK)" "$(LONEJSON_LUA_LIBDIR)" "$(LUA)" "$(LUAROCKS)"
-	rm -rf "$(RELEASE_PACK_DIR)"
-
-release-lua-artifacts: $(RELEASE_ROCKSPEC) $(RELEASE_LUA_SOURCE_TARBALL) $(RELEASE_ROCK)
 
 package:
 	./scripts/package.sh
