@@ -20,6 +20,21 @@ ln -s "$tmp_dir/missing" "$fixture/build"
 "$fixture/scripts/clean.sh"
 [[ ! -L "$fixture/build" ]]
 
+# Selecting an external artifact directory must not leave the checkout's own
+# default dist behind during a full clean. Scoped cleanup preserves it.
+custom="$tmp_dir/selected-dist"
+mkdir -p "$custom" "$fixture/dist/.hidden"
+printf owned >"$custom/.lonejson-dist"
+printf retained >"$fixture/dist/.hidden/sentinel"
+"$fixture/scripts/clean.sh" --dist-only --dist-dir "$custom"
+[[ -f "$fixture/dist/.hidden/sentinel" && ! -e "$custom" ]]
+mkdir -p "$custom"
+printf owned >"$custom/.lonejson-dist"
+"$fixture/scripts/clean.sh" --dist-dir "$custom"
+[[ ! -e "$fixture/dist" && ! -e "$custom" ]] || {
+  printf 'full clean retained an owned artifact directory\n' >&2; exit 1;
+}
+
 set +e
 "$repo_root/scripts/clean.sh" --root "$tmp_dir" >"$tmp_dir/stdout" 2>"$tmp_dir/stderr"
 status=$?
