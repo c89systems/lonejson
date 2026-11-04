@@ -19,6 +19,7 @@ case "$1" in
       *) printf 'commit\n' ;;
     esac
     ;;
+  symbolic-ref) [[ "${TEST_VERSION_SYMBOLIC:-0}" == 1 ]] ;;
   *) exit 1 ;;
 esac
 EOF
@@ -30,9 +31,14 @@ detect() {
 TEST_VERSION_TAGS=v1.2.3 detect | grep -qx 1.2.3
 # Annotated and signed releases both have Git object type "tag".
 TEST_VERSION_OBJECT=tag TEST_VERSION_TAGS=v1.2.3 detect | grep -qx 0.0.0
+TEST_VERSION_SYMBOLIC=1 TEST_VERSION_TAGS=v1.2.3 detect | grep -qx 0.0.0
 TEST_VERSION_OBJECT=tag TEST_VERSION_TAGS=v1.2.3 LONEJSON_VERSION_OVERRIDE=2.3.4 detect | grep -qx 2.3.4
 TEST_VERSION_TAGS=$'v9.8.7\nv1.2.3' LONEJSON_VERSION_OVERRIDE=bad detect | grep -qx 1.2.3
 TEST_VERSION_TAGS=$'v1.2.3-rc1\nother' detect | grep -qx 0.0.0
+if TEST_VERSION_TAGS=$'v1.2.3\nv2.3.4' detect >"$workspace/ambiguous.log" 2>&1; then
+  printf 'ambiguous exact release tags accepted\n' >&2; exit 1
+fi
+grep -F 'ambiguous exact lightweight release tags' "$workspace/ambiguous.log" >/dev/null
 if TEST_VERSION_TAGS= LONEJSON_VERSION_OVERRIDE=bad detect >"$workspace/invalid.log" 2>&1; then
   printf 'invalid version override accepted\n' >&2; exit 1
 fi

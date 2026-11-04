@@ -2,7 +2,7 @@
   "version": 6,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 21,
+    "minor": 25,
     "patch": 0
   },
   "configurePresets": [
@@ -69,7 +69,7 @@
       "inherits": "host",
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-x86_64-gnu.cmake",
       "cacheVariables": {
-        "LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/x86_64-linux-gnu/root",
+        "LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/x86_64-linux-gnu/root",
         "LONEJSON_DIST_DIR": "${sourceDir}/dist",
         "LONEJSON_BUILD_WITH_CURL": "ON",
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
@@ -86,7 +86,7 @@
       "inherits": "host",
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-x86_64-musl.cmake",
       "cacheVariables": {
-        "LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/x86_64-linux-musl/root",
+        "LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/x86_64-linux-musl/root",
         "LONEJSON_DIST_DIR": "${sourceDir}/dist",
         "LONEJSON_BUILD_WITH_CURL": "ON",
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
@@ -103,7 +103,7 @@
       "inherits": "host",
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-aarch64-gnu.cmake",
       "cacheVariables": {
-        "LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/aarch64-linux-gnu/root",
+        "LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/aarch64-linux-gnu/root",
         "LONEJSON_DIST_DIR": "${sourceDir}/dist",
         "LONEJSON_BUILD_WITH_CURL": "ON",
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
@@ -120,7 +120,7 @@
       "inherits": "host",
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-aarch64-musl.cmake",
       "cacheVariables": {
-        "LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/aarch64-linux-musl/root",
+        "LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/aarch64-linux-musl/root",
         "LONEJSON_DIST_DIR": "${sourceDir}/dist",
         "LONEJSON_BUILD_WITH_CURL": "ON",
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
@@ -137,7 +137,7 @@
       "inherits": "host",
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-armhf-gnu.cmake",
       "cacheVariables": {
-        "LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/armhf-linux-gnu/root",
+        "LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/armhf-linux-gnu/root",
         "LONEJSON_DIST_DIR": "${sourceDir}/dist",
         "LONEJSON_BUILD_WITH_CURL": "ON",
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
@@ -154,7 +154,7 @@
       "inherits": "host",
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-armhf-musl.cmake",
       "cacheVariables": {
-        "LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/armhf-linux-musl/root",
+        "LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/armhf-linux-musl/root",
         "LONEJSON_DIST_DIR": "${sourceDir}/dist",
         "LONEJSON_BUILD_WITH_CURL": "ON",
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
@@ -171,7 +171,7 @@
       "inherits": "host",
       "toolchainFile": "${sourceDir}/cmake/toolchains/arm64-apple-darwin.cmake",
       "cacheVariables": {
-        "LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/arm64-apple-darwin/root",
+        "LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/arm64-apple-darwin/root",
         "LONEJSON_DIST_DIR": "${sourceDir}/dist",
         "LONEJSON_BUILD_WITH_CURL": "ON",
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
@@ -385,6 +385,12 @@
     {
       "name": "debug",
       "configurePreset": "debug",
+      "filter": { "exclude": { "label": "e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -392,6 +398,12 @@
     {
       "name": "debug-lua",
       "configurePreset": "debug-lua",
+      "filter": { "exclude": { "label": "e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -399,6 +411,12 @@
     {
       "name": "host",
       "configurePreset": "host",
+      "filter": { "exclude": { "label": "e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -406,6 +424,12 @@
     {
       "name": "host-curl",
       "configurePreset": "host-curl",
+      "filter": { "exclude": { "label": "e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -413,6 +437,12 @@
     {
       "name": "asan",
       "configurePreset": "asan",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -420,6 +450,12 @@
     {
       "name": "tsan",
       "configurePreset": "tsan",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -427,6 +463,12 @@
     {
       "name": "valgrind",
       "configurePreset": "valgrind",
+      "filter": { "exclude": { "label": "e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -434,6 +476,12 @@
     {
       "name": "x86_64-linux-gnu-release",
       "configurePreset": "x86_64-linux-gnu-release",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -441,6 +489,12 @@
     {
       "name": "x86_64-linux-musl-release",
       "configurePreset": "x86_64-linux-musl-release",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -448,6 +502,12 @@
     {
       "name": "aarch64-linux-gnu-release",
       "configurePreset": "aarch64-linux-gnu-release",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -455,6 +515,12 @@
     {
       "name": "aarch64-linux-musl-release",
       "configurePreset": "aarch64-linux-musl-release",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -462,6 +528,12 @@
     {
       "name": "armhf-linux-gnu-release",
       "configurePreset": "armhf-linux-gnu-release",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -469,9 +541,28 @@
     {
       "name": "armhf-linux-musl-release",
       "configurePreset": "armhf-linux-musl-release",
+      "filter": { "exclude": { "label": "host-policy|e2e" } },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      },
       "output": {
         "outputOnFailure": true
       }
+    },
+    {
+      "name": "e2e",
+      "configurePreset": "host-curl",
+      "filter": { "include": { "label": "e2e" } },
+      "execution": { "jobs": 1, "noTestsAction": "error", "stopOnFailure": true },
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "execution": { "jobs": 1, "noTestsAction": "error", "stopOnFailure": true },
+      "output": { "outputOnFailure": true }
     }
   ]
 }

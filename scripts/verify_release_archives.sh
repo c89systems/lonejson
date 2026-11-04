@@ -26,7 +26,7 @@ if [[ ! -f "$checksums" ]]; then
   exit 1
 fi
 
-dist_dir="$(CDPATH= cd -- "$(dirname -- "$checksums")" && pwd)"
+dist_dir="$(CDPATH= cd -- "${4:-$(dirname -- "$checksums")}" && pwd)"
 if [[ -d "$build_root" ]]; then
   build_root="$(CDPATH= cd -- "$build_root" && pwd)"
 fi
@@ -146,9 +146,10 @@ load_target_tools() {
   local preset=$1
   local target_id=$2
 
-  eval "$("$repo_root/scripts/discover_target_tools.sh" \
+  resolved_environment=$("$repo_root/scripts/discover_target_tools.sh" \
     --build-dir "$build_root/$preset" \
-    --target-id "$target_id")"
+    --target-id "$target_id") || exit $?
+  eval "$resolved_environment"
 }
 
 target_cache_value() {
@@ -164,7 +165,7 @@ target_cache_value() {
 target_dependency_root() {
   local preset=$1
 
-  target_cache_value "$preset" LONEJSON_C_PKT_SYSTEMS_ROOT
+  target_cache_value "$preset" LONEJSON_CPKT_ROOT
 }
 
 target_pkg_config_path() {
@@ -275,7 +276,7 @@ require_no_bootlin_toolchain_paths() {
   # only to a local development executable, never to a packaged library,
   # static archive, or consumer metadata.  The collection-name match also
   # catches installations moved through CPKT_TOOLCHAIN_CACHE.
-  toolchain_path_pattern='/(c\.pkt\.systems/)?toolchains(/roots)?/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
+  toolchain_path_pattern='/(cpkt/)?toolchains(/roots)?/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
   if grep -aRE "$toolchain_path_pattern" "$package_root" >/dev/null 2>&1; then
     printf 'pinned Bootlin toolchain path leaked in release archive: %s\n' \
       "$archive" >&2
@@ -288,7 +289,7 @@ require_no_bootlin_elf_loader_metadata() {
   local metadata=$2
   local bootlin_loader_path_pattern
 
-  bootlin_loader_path_pattern='c\.pkt\.systems/toolchains/|/(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-'
+  bootlin_loader_path_pattern='cpkt/toolchains/|/(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-'
   if printf '%s\n' "$metadata" |
       grep -E '(Requesting program interpreter|RUNPATH|RPATH)' |
       grep -E "$bootlin_loader_path_pattern" >/dev/null; then
@@ -360,7 +361,7 @@ require_archive_contract() {
   require_file "$package_root/lib/pkgconfig/lonejson-jwt.pc"
   require_file "$package_root/lib/pkgconfig/lonejson-oidc.pc"
   require_file "$package_root/lib/pkgconfig/lonejson-openssl.pc"
-  if grep -RE 'c\.pkt\.systems|\.cache/|\.deps/|/home/|/build/' \
+  if grep -RE 'cpkt|\.cache/|\.deps/|/home/|/build/' \
       "$package_root/lib/pkgconfig/lonejson.pc" \
       "$package_root/lib/cmake/lonejson" >/dev/null; then
     printf 'forbidden dependency or path leak in release metadata for %s\n' "$archive" >&2
@@ -416,7 +417,7 @@ require_archive_contract() {
       "$archive"
     dynamic_metadata="$("$OTOOL" -l "$shared_lib" | awk '$1 == "name" || $1 == "path" { print }')"
     case "$dynamic_metadata" in
-      *libcurl* | *libssl* | *libcrypto* | *OpenSSL* | *c.pkt.systems* | *".cache/"* | *".deps/"* | *"$repo_root"* | *"/home/"* | *"/build/"*)
+      *libcurl* | *libssl* | *libcrypto* | *OpenSSL* | *cpkt* | *".cache/"* | *".deps/"* | *"$repo_root"* | *"/home/"* | *"/build/"*)
         printf 'forbidden dependency or path leak in %s\n' "$archive" >&2
         exit 1
         ;;
@@ -439,7 +440,7 @@ require_archive_contract() {
     dynamic_metadata="$("$READELF" -d "$shared_lib")"
     require_no_bootlin_elf_loader_metadata "$archive" "$dynamic_metadata"
     case "$dynamic_metadata" in
-      *libcurl* | *libssl* | *libcrypto* | *OpenSSL* | *c.pkt.systems* | *".cache/"* | *".deps/"* | *"$repo_root"* | *"/home/"* | *"/build/"*)
+      *libcurl* | *libssl* | *libcrypto* | *OpenSSL* | *cpkt* | *".cache/"* | *".deps/"* | *"$repo_root"* | *"/home/"* | *"/build/"*)
         printf 'forbidden dependency or path leak in %s\n' "$archive" >&2
         exit 1
         ;;
@@ -545,7 +546,7 @@ EOF
       -D "CMAKE_TOOLCHAIN_FILE=$repo_root/cmake/toolchains/arm64-apple-darwin.cmake"
       -D "LONEJSON_MACOS_DEPLOYMENT_TARGET=$darwin_deployment_target"
       -D "CMAKE_OSX_DEPLOYMENT_TARGET=$darwin_deployment_target"
-      -D "LONEJSON_C_PKT_SYSTEMS_ROOT=$adapter_dependency_root"
+      -D "LONEJSON_CPKT_ROOT=$adapter_dependency_root"
     )
   else
     cmake_args=(
@@ -657,7 +658,7 @@ EOF
       -D "CMAKE_TOOLCHAIN_FILE=$repo_root/cmake/toolchains/arm64-apple-darwin.cmake"
       -D "LONEJSON_MACOS_DEPLOYMENT_TARGET=$darwin_deployment_target"
       -D "CMAKE_OSX_DEPLOYMENT_TARGET=$darwin_deployment_target"
-      -D "LONEJSON_C_PKT_SYSTEMS_ROOT=$adapter_dependency_root"
+      -D "LONEJSON_CPKT_ROOT=$adapter_dependency_root"
     )
   else
     cmake_args=(

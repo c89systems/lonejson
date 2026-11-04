@@ -26,7 +26,8 @@ mkdir -p "$rock_tree"
     "$luarocks_exec" make --tree "$rock_tree" "$rockspec" >/dev/null
 )
 
-eval "$("$luarocks_exec" path --tree "$rock_tree")"
+resolved_environment=$("$luarocks_exec" path --tree "$rock_tree") || exit $?
+eval "$resolved_environment"
 export LONEJSON_TEST_TEMP_DIR="$tmp_dir"
 "$repo_root/scripts/run_installed_lua.sh" "$rock_tree" "$libdir" "$lua_exec" "$repo_root/tests/test_lua.lua"
 "$repo_root/scripts/run_installed_lua.sh" "$rock_tree" "$libdir" "$lua_exec" "$repo_root/tests/test_lua_fuzz.lua"

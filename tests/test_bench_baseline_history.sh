@@ -16,8 +16,8 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 if [[ "$(uname -s)" == Linux &&
       ! -x "$runner_build/lonejson_lua_target_runner" ]]; then
-  printf 'skipping Lua benchmark fixture: missing Bootlin target runner\n'
-  exit 77
+  printf 'missing required Bootlin target runner for Lua benchmark fixture\n'
+  exit 1
 fi
 
 run_lua() {
@@ -114,10 +114,9 @@ printf '%s\n' "$missing_host_output" | \
   grep -F 'perflogs/hosts/missing-test-host/lua/baseline.json' >/dev/null
 
 if [[ ! -x "$runner_build/lonejson_lua_target_runner" ]]; then
-  make --no-print-directory -C "$repo_root" lua-rock \
-    LUA="$lua_exec" LUAROCKS="$luarocks_exec" >/dev/null
-  eval "$("$luarocks_exec" path --tree "$repo_root/build/luarocks")"
-  export DYLD_LIBRARY_PATH="$repo_root/build/debug:${DYLD_LIBRARY_PATH:-}"
+  resolved_environment=$("$luarocks_exec" path --tree "$repo_root/build/luarocks") || exit $?
+  eval "$resolved_environment"
+  export DYLD_LIBRARY_PATH="${LONEJSON_LIBDIR:-$repo_root/build/lua-sdk/lib}:${DYLD_LIBRARY_PATH:-}"
 fi
 
 git -C "$tmp_dir" init -q
@@ -147,15 +146,15 @@ write_baseline() {
 
 write_baseline 100 50 -
 git -C "$tmp_dir" add perflogs/hosts/testhost/baseline.json
-git -C "$tmp_dir" commit -q -m 'bench: add first baseline'
+git -C "$tmp_dir" commit -q -m 'test(bench): add first baseline'
 
 write_baseline 120 - 5
 git -C "$tmp_dir" add perflogs/hosts/testhost/baseline.json
-git -C "$tmp_dir" commit -q -m 'bench: add second baseline'
+git -C "$tmp_dir" commit -q -m 'test(bench): add second baseline'
 
 write_baseline 90 55 6
 git -C "$tmp_dir" add perflogs/hosts/testhost/baseline.json
-git -C "$tmp_dir" commit -q -m 'bench: add third baseline'
+git -C "$tmp_dir" commit -q -m 'test(bench): add third baseline'
 
 output=$(run_lua "$repo_root/scripts/bench_baseline_history.lua" --repo "$tmp_dir" --kind c --host-id testhost)
 

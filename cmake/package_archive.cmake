@@ -29,10 +29,10 @@ lonejson_discover_target_tools()
 set(archive_name "liblonejson-${LONEJSON_VERSION}-${LONEJSON_TARGET_ID}")
 set(package_root "${package_stage_root}/${archive_name}")
 file(REMOVE_RECURSE "${package_stage_root}")
-include("${LONEJSON_ROOT}/cmake/c_pkt_systems_metadata.cmake")
-lonejson_c_pkt_systems_sha256("${LONEJSON_TARGET_ID}" c_pkt_systems_sha256)
-set(c_pkt_systems_url
-    "${LONEJSON_C_PKT_SYSTEMS_BASE_URL_DEFAULT}/c.pkt.systems-${LONEJSON_C_PKT_SYSTEMS_PINNED_VERSION}-${LONEJSON_TARGET_ID}.tar.gz")
+include("${LONEJSON_ROOT}/cmake/cpkt_metadata.cmake")
+lonejson_cpkt_sha256("${LONEJSON_TARGET_ID}" cpkt_sha256)
+set(cpkt_url
+    "${LONEJSON_CPKT_BASE_URL_DEFAULT}/cpkt-${LONEJSON_CPKT_PINNED_VERSION}-${LONEJSON_TARGET_ID}.tar.gz")
 file(MAKE_DIRECTORY "${package_root}/include")
 file(MAKE_DIRECTORY "${package_root}/lib")
 file(MAKE_DIRECTORY "${package_root}/lib/cmake/lonejson")
@@ -63,7 +63,8 @@ if(DEFINED LONEJSON_STRIP AND NOT LONEJSON_STRIP STREQUAL "")
       message(FATAL_ERROR "failed to strip ${packaged_shared_lib}")
     endif()
     execute_process(
-      COMMAND "${LONEJSON_STRIP}" "${strip_static_flag}" "${packaged_static_lib}"
+      COMMAND "${LONEJSON_STRIP}" --enable-deterministic-archives
+        "${strip_static_flag}" "${packaged_static_lib}"
       RESULT_VARIABLE strip_static_result
     )
     if(NOT strip_static_result EQUAL 0)
@@ -96,10 +97,10 @@ set(dependencies_file "${package_root}/share/lonejson/dependencies.json")
 set(dependency_entries "")
 foreach(component IN ITEMS curl openssl)
   if(component STREQUAL "curl")
-    set(component_version "${LONEJSON_C_PKT_SYSTEMS_CURL_VERSION}")
+    set(component_version "${LONEJSON_CPKT_CURL_VERSION}")
     set(component_license "curl")
   else()
-    set(component_version "${LONEJSON_C_PKT_SYSTEMS_OPENSSL_VERSION}")
+    set(component_version "${LONEJSON_CPKT_OPENSSL_VERSION}")
     set(component_license "Apache-2.0")
   endif()
   string(APPEND dependency_entries ",
@@ -107,10 +108,10 @@ foreach(component IN ITEMS curl openssl)
       \"name\": \"${component}\",
       \"version\": \"${component_version}\",
       \"target_id\": \"${LONEJSON_TARGET_ID}\",
-      \"source_system\": \"c.pkt.systems\",
-      \"source_url\": \"${c_pkt_systems_url}\",
-      \"sha256\": \"${c_pkt_systems_sha256}\",
-      \"archive_name\": \"c.pkt.systems-${LONEJSON_C_PKT_SYSTEMS_PINNED_VERSION}-${LONEJSON_TARGET_ID}.tar.gz\",
+      \"source_system\": \"cpkt\",
+      \"source_url\": \"${cpkt_url}\",
+      \"sha256\": \"${cpkt_sha256}\",
+      \"archive_name\": \"cpkt-${LONEJSON_CPKT_PINNED_VERSION}-${LONEJSON_TARGET_ID}.tar.gz\",
       \"license\": \"${component_license}\",
       \"bundled\": false,
       \"external\": true,
@@ -125,13 +126,13 @@ file(WRITE "${dependencies_file}"
   \"target_id\": \"${LONEJSON_TARGET_ID}\",
   \"dependencies\": [
     {
-      \"name\": \"c.pkt.systems\",
-      \"version\": \"${LONEJSON_C_PKT_SYSTEMS_PINNED_VERSION}\",
+      \"name\": \"cpkt\",
+      \"version\": \"${LONEJSON_CPKT_PINNED_VERSION}\",
       \"target_id\": \"${LONEJSON_TARGET_ID}\",
       \"source_system\": \"GitHub release\",
-      \"source_url\": \"${c_pkt_systems_url}\",
-      \"sha256\": \"${c_pkt_systems_sha256}\",
-      \"archive_name\": \"c.pkt.systems-${LONEJSON_C_PKT_SYSTEMS_PINNED_VERSION}-${LONEJSON_TARGET_ID}.tar.gz\",
+      \"source_url\": \"${cpkt_url}\",
+      \"sha256\": \"${cpkt_sha256}\",
+      \"archive_name\": \"cpkt-${LONEJSON_CPKT_PINNED_VERSION}-${LONEJSON_TARGET_ID}.tar.gz\",
       \"license\": \"MIT\",
       \"bundled\": false,
       \"external\": false,
@@ -313,31 +314,13 @@ lonejson_prepare_dist_dir()
 set(archive_base "${package_stage_root}/${archive_name}.tar")
 set(archive "${LONEJSON_DIST_DIR}/${archive_name}.tar.gz")
 
-find_program(LONEJSON_TAR_BIN NAMES tar)
-find_program(LONEJSON_GZIP_BIN NAMES gzip)
-if(NOT LONEJSON_TAR_BIN)
-  message(FATAL_ERROR "failed to find tar for archive creation")
-endif()
-if(NOT LONEJSON_GZIP_BIN)
-  message(FATAL_ERROR "failed to find gzip for archive creation")
-endif()
-
-file(REMOVE "${archive_base}" "${archive_base}.gz")
 execute_process(
-  COMMAND "${LONEJSON_TAR_BIN}" -cf "${archive_base}" --format=gnu --owner=0 --group=0 "${archive_name}"
-  WORKING_DIRECTORY "${package_stage_root}"
+  COMMAND "${LONEJSON_ROOT}/scripts/archive_release_tree.sh"
+    "${package_root}" "${archive_base}.gz"
   RESULT_VARIABLE tar_result
 )
 if(NOT tar_result EQUAL 0)
   message(FATAL_ERROR "failed to create package tar archive")
-endif()
-
-execute_process(
-  COMMAND "${LONEJSON_GZIP_BIN}" -n -9 -f "${archive_base}"
-  RESULT_VARIABLE gzip_result
-)
-if(NOT gzip_result EQUAL 0)
-  message(FATAL_ERROR "failed to gzip package archive")
 endif()
 
 lonejson_publish_artifact("${archive_base}.gz" "${archive}")

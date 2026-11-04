@@ -3,7 +3,11 @@ set -euo pipefail
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 toolchain_resolver="$repo_root/scripts/cpkt-toolchains.sh"
-host_policy_ctest_exclude='lonejson_(discover_target_tools_tests|compiler_selection_tests|darwin_macho_metadata_tests|darwin_linker_route_tests|c_pkt_systems_fetch_retry_tests|cmake_threads_optional_tests|cmake_c_pkt_systems_root_tests|test_all_hardening_tests|bootlin_tsan_support_tests|cross_sanitizer_matrix_tests|cmake_fuzz_sanitizer_conflict_tests|cmake_fuzz_auth_optional_tests|release_werror_tests|source_release_tarball_tests|lua_legacy_uservalue_tests|lua_schema_cache_tests|lua_encode_stats_tests|lua_external_liblonejson_tests|lua_src_rock_privacy_tests|lua_public_boundary_tests|lua_surface_coverage_tests|lua_source_stage_manifest_tests|release_artifact_verify_tests|release_archive_verify_tests|lua_native_test_target_filter_tests|run_release_matrix_darwin_target_tests|release_checksum_manifest_tests|release_version_configuration_tests|ctest_metadata_tests|short_names_tests|short_names_disabled_tests|single_header_strict_warning_tests|single_header_strict_warning_build_tests|single_header_config_default|single_header_config_omit_protocol|single_header_config_lj_implementation|single_header_config_lj_config_aliases|single_header_config_short_names_disabled|static_link_tests|shared_link_tests|shared_soversion_tests|single_header_version_tests|header_abi_version_tests|single_header_release_version_tests|bench_gate_tests)'
+host_policy_ctest_exclude=host-policy
+configure_args=()
+if [[ ${LONEJSON_RELEASE_TARGETS+x} ]]; then
+    configure_args+=("-DLONEJSON_RELEASE_TARGETS=$LONEJSON_RELEASE_TARGETS")
+fi
 
 usage() {
     printf 'usage: %s [--dry-run]\n' "$(basename -- "$0")" >&2
@@ -181,7 +185,7 @@ run_target_sanitizer() {
     sanitizer="$3"
     build_dir="$repo_root/build/$preset-$sanitizer"
     toolchain_file="$(target_toolchain_file "$target_id")"
-    bundle_root="$repo_root/.cache/c.pkt.systems/$target_id/root"
+    bundle_root="$repo_root/.cache/cpkt/$target_id/root"
     sanitizer_flag="$(sanitizer_cmake_flag "$sanitizer")"
     sanitizer_runtime_dir=""
     env_name="$(sanitizer_env_name "$sanitizer")"
@@ -202,6 +206,7 @@ run_target_sanitizer() {
         run_probe "$target_id" "$sanitizer" ""
     fi
     run_or_print cmake -S "$repo_root" -B "$build_dir" -G Ninja \
+        "${configure_args[@]}" \
         -DCMAKE_TOOLCHAIN_FILE="$toolchain_file" \
         "${compiler_args[@]}" \
         -DCMAKE_BUILD_TYPE=Debug \
@@ -212,12 +217,12 @@ run_target_sanitizer() {
         -DLONEJSON_BUILD_WITH_JWT=ON \
         -DLONEJSON_BUILD_WITH_OIDC=ON \
         -DLONEJSON_TEST_TIMEOUT=600 \
-        -DLONEJSON_C_PKT_SYSTEMS_ROOT="$bundle_root"
+        -DLONEJSON_CPKT_ROOT="$bundle_root"
     run_or_print cmake --build "$build_dir"
     if ! run_or_print env "$env_name=$env_value" \
         UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1 \
-        ctest --test-dir "$build_dir" --output-on-failure --timeout 600 \
-        -E "$host_policy_ctest_exclude"; then
+        ctest --no-tests=error --test-dir "$build_dir" --output-on-failure --timeout 600 \
+        -LE "$host_policy_ctest_exclude"; then
         diagnostic cross-sanitizers "ctest-$target_id-$sanitizer" test "sanitized target tests failed" "fix the reported target sanitizer test failure"
         exit 1
     fi

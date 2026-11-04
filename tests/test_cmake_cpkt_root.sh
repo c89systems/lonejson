@@ -4,14 +4,14 @@ set -euo pipefail
 workspace_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
 mkdir -p "$workspace_root/build"
 
-# Rationale: c.pkt.systems integration must resolve dependencies from the
+# Rationale: cpkt integration must resolve dependencies from the
 # selected SDK root and reject invalid feature/root combinations before build.
 
 repo_root=$1
-tmp_dir=$(mktemp -d "$workspace_root/build/test_cmake_c_pkt_systems_root.XXXXXX")
+tmp_dir=$(mktemp -d "$workspace_root/build/test_cmake_cpkt_root.XXXXXX")
 trap 'rm -rf "$tmp_dir"' EXIT
 
-fake_root="$tmp_dir/c.pkt.systems/root"
+fake_root="$tmp_dir/cpkt/root"
 fake_toolchain="$tmp_dir/toolchain.cmake"
 fake_modules="$tmp_dir/modules"
 old_openssl_modules="$tmp_dir/old-openssl-modules"
@@ -34,6 +34,8 @@ missing_openssl_config_root="$tmp_dir/missing-openssl-config-root"
 mkdir -p "$fake_root/include" "$fake_root/lib/cmake/CURL" "$fake_root/lib/cmake/OpenSSL"
 touch "$fake_root/include/lua.h" "$fake_root/lib/liblua.so"
 cat >"$fake_root/lib/cmake/CURL/CURLConfig.cmake" <<'EOF'
+include(CMakeFindDependencyMacro)
+find_dependency(OpenSSL CONFIG REQUIRED)
 get_filename_component(_fake_curl_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 set(CURL_FOUND TRUE)
 set(CURL_INCLUDE_DIRS "${_fake_curl_prefix}/include")
@@ -146,7 +148,7 @@ cmake -S "$repo_root" -B "$root_build_dir" \
   -D CMAKE_TOOLCHAIN_FILE="$fake_toolchain" \
   -D LONEJSON_BUILD_WITH_CURL=ON \
   -D LONEJSON_BUILD_WITH_OPENSSL=ON \
-  -D LONEJSON_C_PKT_SYSTEMS_ROOT="$fake_root" \
+  -D LONEJSON_CPKT_ROOT="$fake_root" \
   -D CURL_DIR="$stale_root/lib/cmake/CURL" \
   -D CURL_INCLUDE_DIR="$tmp_dir/stale-curl-include" \
   -D CURL_LIBRARY_RELEASE="$tmp_dir/stale-libcurl.a" \
@@ -167,7 +169,7 @@ cmake -S "$repo_root" -B "$openssl_root_build_dir" \
   -G Ninja \
   -D CMAKE_TOOLCHAIN_FILE="$fake_toolchain" \
   -D LONEJSON_BUILD_WITH_OPENSSL=ON \
-  -D LONEJSON_C_PKT_SYSTEMS_ROOT="$fake_root" \
+  -D LONEJSON_CPKT_ROOT="$fake_root" \
   -D OpenSSL_DIR="$stale_root/lib/cmake/OpenSSL" \
   -D OPENSSL_INCLUDE_DIR="$tmp_dir/stale-openssl-include" \
   -D OPENSSL_SSL_LIBRARY="$tmp_dir/stale-libssl.a" \
@@ -222,28 +224,28 @@ if cmake -S "$repo_root" -B "$missing_root_build_dir" \
   -G Ninja \
   -D LONEJSON_BUILD_WITH_CURL=ON \
   -D LONEJSON_BUILD_WITH_OPENSSL=ON \
-  -D LONEJSON_C_PKT_SYSTEMS_ROOT="$tmp_dir/missing-root" \
+  -D LONEJSON_CPKT_ROOT="$tmp_dir/missing-root" \
   -D LONEJSON_BUILD_TESTS=OFF \
   -D LONEJSON_BUILD_EXAMPLES=OFF \
   >"$tmp_dir/missing-root.log" 2>&1; then
-  printf 'expected missing LONEJSON_C_PKT_SYSTEMS_ROOT to fail configure\n' >&2
+  printf 'expected missing LONEJSON_CPKT_ROOT to fail configure\n' >&2
   exit 1
 fi
-grep -F 'LONEJSON_C_PKT_SYSTEMS_ROOT does not exist' \
+grep -F 'LONEJSON_CPKT_ROOT does not exist' \
   "$tmp_dir/missing-root.log" >/dev/null
 
 mkdir -p "$missing_config_root"
 if cmake -S "$repo_root" -B "$missing_config_build_dir" \
   -G Ninja \
   -D LONEJSON_BUILD_WITH_CURL=ON \
-  -D LONEJSON_C_PKT_SYSTEMS_ROOT="$missing_config_root" \
+  -D LONEJSON_CPKT_ROOT="$missing_config_root" \
   -D LONEJSON_BUILD_TESTS=OFF \
   -D LONEJSON_BUILD_EXAMPLES=OFF \
   >"$tmp_dir/missing-config.log" 2>&1; then
-  printf 'expected c.pkt.systems root without CURLConfig.cmake to fail configure\n' >&2
+  printf 'expected cpkt root without CURLConfig.cmake to fail configure\n' >&2
   exit 1
 fi
-grep -F 'LONEJSON_C_PKT_SYSTEMS_ROOT is missing CURLConfig.cmake' \
+grep -F 'LONEJSON_CPKT_ROOT is missing CURLConfig.cmake' \
   "$tmp_dir/missing-config.log" >/dev/null
 
 mkdir -p "$missing_openssl_config_root/lib/cmake/CURL"
@@ -252,14 +254,14 @@ cp "$fake_root/lib/cmake/CURL/CURLConfig.cmake" \
 if cmake -S "$repo_root" -B "$missing_openssl_config_build_dir" \
   -G Ninja \
   -D LONEJSON_BUILD_WITH_OPENSSL=ON \
-  -D LONEJSON_C_PKT_SYSTEMS_ROOT="$missing_openssl_config_root" \
+  -D LONEJSON_CPKT_ROOT="$missing_openssl_config_root" \
   -D LONEJSON_BUILD_TESTS=OFF \
   -D LONEJSON_BUILD_EXAMPLES=OFF \
   >"$tmp_dir/missing-openssl-config.log" 2>&1; then
-  printf 'expected c.pkt.systems root without OpenSSLConfig.cmake to fail configure\n' >&2
+  printf 'expected cpkt root without OpenSSLConfig.cmake to fail configure\n' >&2
   exit 1
 fi
-grep -F 'LONEJSON_C_PKT_SYSTEMS_ROOT is missing OpenSSLConfig.cmake' \
+grep -F 'LONEJSON_CPKT_ROOT is missing OpenSSLConfig.cmake' \
   "$tmp_dir/missing-openssl-config.log" >/dev/null
 
 cmake -S "$repo_root" -B "$jwt_without_openssl_build_dir" \
@@ -309,7 +311,7 @@ cmake -S "$repo_root" -B "$lua_openssl_without_jwt_build_dir" \
   -D CMAKE_TOOLCHAIN_FILE="$fake_toolchain" \
   -D LONEJSON_BUILD_WITH_OPENSSL=ON \
   -D LONEJSON_BUILD_WITH_JWT=OFF \
-  -D LONEJSON_C_PKT_SYSTEMS_ROOT="$fake_root" \
+  -D LONEJSON_CPKT_ROOT="$fake_root" \
   -D LONEJSON_BUILD_TESTS=ON \
   -D LONEJSON_BUILD_EXAMPLES=OFF \
   >"$tmp_dir/lua-openssl-without-jwt.log" 2>&1

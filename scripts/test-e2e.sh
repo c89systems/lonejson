@@ -27,8 +27,5 @@ cd "$repo_root"
 
 "$repo_root/scripts/devenv.sh" up
 started_services=1
-"$repo_root/tests/test_devenv_ownership.sh" "$repo_root"
-
-"$repo_root/scripts/time_step.sh" e2e/curl make --no-print-directory LONEJSON_E2E_SERVICES_READY=1 test-curl-e2e
-"$repo_root/scripts/time_step.sh" e2e/oidc make --no-print-directory LONEJSON_E2E_SERVICES_READY=1 test-oidc-e2e
-"$repo_root/scripts/time_step.sh" e2e/m2m make --no-print-directory test-m2m-e2e
+make --no-print-directory e2e-build
+ctest --preset e2e

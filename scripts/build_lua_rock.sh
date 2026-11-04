@@ -76,7 +76,7 @@ rm -f "${object_path}" "${module_path}" "${probe_bin}"
 
 if [ "$native_system" = "Linux" ]; then
   "$repo_root/scripts/deps.sh" "$target_id" >/dev/null
-  bundle_root="$repo_root/.cache/c.pkt.systems/$target_id/root"
+  bundle_root="$repo_root/.cache/cpkt/$target_id/root"
   lua_incdir="$bundle_root/include"
 fi
 

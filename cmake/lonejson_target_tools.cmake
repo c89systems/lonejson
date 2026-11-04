@@ -10,7 +10,8 @@ function(lonejson_discover_target_tools)
   execute_process(
     COMMAND "${_bash}" -c [=[
 set -euo pipefail
-eval "$("$1" --build-dir "$2" --target-id "$3")"
+resolved_environment=$("$1" --build-dir "$2" --target-id "$3") || exit $?
+eval "$resolved_environment"
 printf '%s\n' "cc=$CC" "ld=$LINKER" "ar=$AR" "strip=$STRIP" "nm=$NM" "otool=$OTOOL"
 ]=] target-tools "${LONEJSON_ROOT}/scripts/discover_target_tools.sh"
       "${LONEJSON_BINARY_DIR}" "${LONEJSON_TARGET_ID}"

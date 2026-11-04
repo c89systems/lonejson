@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/LonejsonLifecycle.cmake")
 # Use the complete pinned Bootlin collection matching the native Linux host.
 # AFL++ remains a native x86_64 GCC-plugin wrapper around that collection.
 if(LONEJSON_BUILD_FUZZERS)
@@ -6,7 +7,7 @@ if(LONEJSON_BUILD_FUZZERS)
   include("${CMAKE_CURRENT_LIST_DIR}/toolchains/lonejson_bootlin.cmake")
   lonejson_configure_bootlin_toolchain(
     x86_64-linux-gnu x86_64 x86_64 "" qemu-x86_64)
-  set(_lonejson_afl_resolver "${CMAKE_CURRENT_LIST_DIR}/../scripts/cpkt-aflpp.sh")
+  set(_lonejson_afl_resolver "${CPKT_LIFECYCLE_SCRIPTS_DIR}/cpkt-aflpp.sh")
   execute_process(
     COMMAND "${_lonejson_afl_resolver}" discover
     RESULT_VARIABLE _lonejson_afl_result
@@ -19,11 +20,11 @@ if(LONEJSON_BUILD_FUZZERS)
       "Pinned AFL++ diagnostics toolchain is unavailable. Run `make toolchains-aflpp`.\n${_lonejson_afl_error}")
   endif()
   foreach(_lonejson_key root version cc cxx afl_fuzz afl_showmap helper)
-    string(REGEX MATCH "${_lonejson_key}=([^\r\n]+)" _lonejson_match "${_lonejson_afl_description}")
+    string(REGEX MATCH "(^|[\r\n])${_lonejson_key}=([^\r\n]+)" _lonejson_match "${_lonejson_afl_description}")
     if(NOT _lonejson_match)
       message(FATAL_ERROR "AFL++ resolver did not report ${_lonejson_key}")
     endif()
-    set(_lonejson_afl_${_lonejson_key} "${CMAKE_MATCH_1}")
+    set(_lonejson_afl_${_lonejson_key} "${CMAKE_MATCH_2}")
   endforeach()
   set(CMAKE_C_COMPILER "${_lonejson_afl_cc}" CACHE FILEPATH "" FORCE)
   set(CMAKE_CXX_COMPILER "${_lonejson_afl_cxx}" CACHE FILEPATH "" FORCE)

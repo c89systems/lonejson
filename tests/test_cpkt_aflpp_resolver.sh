@@ -1,113 +1,96 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-workspace_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
-mkdir -p "$workspace_root/build"
-
-# AFL++ is a shared immutable cache root. A provisioner which waited for the
-# lock must retain a root another checkout published before it could build or
-# replace anything.
-
-repo_root=$1
+repo_root=${1:?repository root required}
 resolver="$repo_root/scripts/cpkt-aflpp.sh"
-tmp_dir=$(mktemp -d "$workspace_root/build/test_cpkt_aflpp_resolver.XXXXXX")
-trap 'rm -rf "$tmp_dir"' EXIT
+mkdir -p "$repo_root/build"
+work=$(mktemp -d "$repo_root/build/afl-fixture.XXXXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+fail() { printf 'AFL fixture: %s\n' "$*" >&2; exit 1; }
 
-grep -F 'lock_file="$lock_dir/${r##*/}.lock"' "$resolver" >/dev/null
-grep -F 'CPKT_TOOLCHAIN_LOCK_TIMEOUT' "$resolver" >/dev/null
-grep -F 'flock -w "$lock_wait_seconds" "$lock_fd"' "$resolver" >/dev/null
-grep -F 'while this process waited for the shared-cache lock' "$resolver" >/dev/null
-grep -F 'flock -u "$lock_fd"' "$resolver" >/dev/null
-grep -F 'revision=2' "$resolver" >/dev/null
-grep -F 'helper="$r/lib/afl"' "$resolver" >/dev/null
-grep -F 'export AFL_PATH=$published_root/lib/afl' "$resolver" >/dev/null
-grep -F 'ready "$tmp/root" "$r"' "$resolver" >/dev/null
-grep -F 'afl-fuzz afl-showmap' "$resolver" >/dev/null
-grep -F -- '-DAFL_PATH=\"$helper\"' "$resolver" >/dev/null
-grep -F -- '-DBIN_PATH=\"$r/bin\"' "$resolver" >/dev/null
-if grep -F 'afl-tmin afl-gotcpu afl-analyze afl-cmin' "$resolver" >/dev/null; then
-  printf 'AFL++ resolver must not build unused auxiliary utilities\n' >&2
-  exit 1
+# Local synthetic collections exercise discovery; they never download or compile.
+id=x86-64--glibc--stable-2026.08-1
+collection="$work/cache/roots/$id"
+sysroot="$collection/x86_64-buildroot-linux-gnu/sysroot"
+mkdir -p "$collection/bin" "$collection/lib" "$collection/runtime" "$sysroot/lib" "$sysroot/usr/lib" "$sysroot/usr/include"
+touch "$sysroot/usr/include/stdio.h" "$sysroot/usr/lib/libc.so"
+touch "$collection/runtime/libstdc++.a" "$collection/runtime/libgcc.a" "$collection/runtime/libstdc++.so.6"
+for tool in gcc g++ ld ar ranlib strip nm objcopy objdump addr2line gdb readelf cc1 cc1plus; do
+  printf '#!/bin/sh\nexit 0\n' > "$collection/bin/x86_64-linux-$tool"
+  chmod +x "$collection/bin/x86_64-linux-$tool"
+done
+cat > "$collection/bin/x86_64-linux-g++" <<'COMPILER'
+#!/bin/sh
+case "$1" in
+  -print-file-name=libstdc++.a) printf '%s/runtime/libstdc++.a\n' "$TEST_COLLECTION";;
+  -print-file-name=libgcc.a) printf '%s/runtime/libgcc.a\n' "$TEST_COLLECTION";;
+  -print-file-name=libstdc++.so.6) printf '%s/runtime/libstdc++.so.6\n' "$TEST_COLLECTION";;
+  -print-prog-name=cc1) printf '%s/bin/x86_64-linux-cc1\n' "$TEST_COLLECTION";;
+  -print-prog-name=cc1plus) printf '%s/bin/x86_64-linux-cc1plus\n' "$TEST_COLLECTION";;
+  *) exit 1;;
+esac
+COMPILER
+cp "$collection/bin/x86_64-linux-g++" "$collection/bin/x86_64-linux-gcc"
+printf '#!/bin/sh\nexit 0\n' > "$sysroot/lib/ld-linux-x86-64.so.2"
+chmod +x "$sysroot/lib/ld-linux-x86-64.so.2"
+export TEST_COLLECTION="$collection" CPKT_TOOLCHAIN_CACHE="$work/cache"
+prepared="$work/cache/roots/aflplusplus-5.02c-x86_64-linux-gnu-$id-r2"
+mkdir -p "$prepared/bin" "$prepared/lib/afl" "$prepared/libexec/bootlin-runtime"
+for tool in afl-fuzz afl-showmap cpkt-afl-gcc cpkt-afl-g++ afl-cc bootlin-gcc bootlin-g++; do
+  printf '#!/bin/sh\nexit 0\n' > "$prepared/bin/$tool"
+  chmod +x "$prepared/bin/$tool"
+done
+ln -s afl-cc "$prepared/bin/afl-gcc-fast"
+ln -s afl-cc "$prepared/bin/afl-g++-fast"
+for tool in cc1 cc1plus; do
+  printf '#!/bin/sh\nexit 0\n' > "$prepared/libexec/bootlin-runtime/$tool"
+  chmod +x "$prepared/libexec/bootlin-runtime/$tool"
+done
+touch "$prepared/lib/afl/afl-gcc-pass.so" "$prepared/lib/afl/afl-compiler-rt.o" "$prepared/lib/afl/dynamic_list.txt" "$prepared/.cpkt-aflpp-revision-2-$id"
+description=$("$resolver" discover)
+grep -Fxq 'status=ready' <<< "$description" || fail 'prepared inputs unavailable'
+environment=$("$resolver" env)
+(
+  eval "$environment"
+  [[ "$CC" = "$prepared/bin/cpkt-afl-gcc" && "$AFL_CC" = "$prepared/bin/bootlin-gcc" ]] ||
+    fail 'wrong instrumentation tools selected'
+)
+for required in "$prepared/bin/afl-showmap" "$prepared/lib/afl/dynamic_list.txt" "$sysroot/lib/ld-linux-x86-64.so.2"; do
+  mv "$required" "$required.saved"
+  for mode in discover env; do
+    if "$resolver" "$mode" > "$work/out" 2> "$work/err"; then fail 'missing input accepted'; fi
+    [[ ! -s "$work/out" && ! -e "$required" ]] || fail 'query repaired or exported missing state'
+  done
+  mv "$required.saved" "$required"
+done
+
+# Stop provisioning at extraction: no network/compiler, and no reuse of residue.
+mkdir -p "$work/stubs" "$work/cache/archives" "$collection/include"
+touch "$collection/include/gmp.h" "$work/cache/archives/AFLplusplus-5.02c.tar.gz"
+printf '#!/bin/sh\nprintf "118415843e5d289d63bd6d8f2252c18212978f15ac9e86acbbc75766cd45acde  -\\n"\n' > "$work/stubs/sha256sum"
+cat > "$work/stubs/tar" <<'EXTRACTOR'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -C ]; then printf '%s\n' "$2" > "$TEST_TAR_DEST"; exit 42; fi
+  shift
+done
+exit 43
+EXTRACTOR
+for tool in curl wget; do printf '#!/bin/sh\nexit 90\n' > "$work/stubs/$tool"; done
+chmod +x "$work/stubs/"*
+mv "$prepared/lib/afl/dynamic_list.txt" "$prepared/lib/afl/dynamic_list.txt.saved"
+if PATH="$work/stubs:$PATH" TEST_TAR_DEST="$work/extract-path" TEST_STALE_PATH="$work/stale-path" \
+    bash -c 'old="$CPKT_TOOLCHAIN_CACHE/.aflplusplus.$$"; mkdir -p "$old/extract"; touch "$old/residue"; printf "%s\n" "$old" > "$TEST_STALE_PATH"; exec "$1" ensure' \
+    fixture "$resolver" > "$work/out" 2> "$work/err"; then
+  fail 'injected extraction failure accepted'
+else
+  [[ $? == 42 ]] || fail 'provisioning did not reach isolated extraction'
 fi
-
-lock_test_cache="$tmp_dir/lock-test-cache"
-lock_test_root="$lock_test_cache/roots/fixture"
-lock_test_bin="$tmp_dir/lock-test-bin"
-mkdir -p "$lock_test_bin"
-cat >"$lock_test_bin/flock" <<'EOF'
-#!/usr/bin/env bash
-if [[ "${1:-}" != -u ]]; then
-  mkdir -p "$CPKT_AFLPP_TEST_READY_ROOT"
-  : >"$CPKT_AFLPP_TEST_READY_ROOT/.ready"
-fi
-EOF
-chmod +x "$lock_test_bin/flock"
-
-CPKT_AFLPP_TEST_READY_ROOT="$lock_test_root" \
-CPKT_TOOLCHAIN_LOCK_TIMEOUT=17 \
-PATH="$lock_test_bin:$PATH" \
-bash -s "$resolver" "$lock_test_cache" "$lock_test_root" <<'EOF'
-set -euo pipefail
-resolver=$1
-fixture_cache=$2
-fixture_root=$3
-source "$resolver"
-cache() {
-  printf '%s\n' "$fixture_cache"
-}
-root() {
-  printf '%s\n' "$fixture_root"
-}
-ready() {
-  [[ -f "$1/.ready" ]]
-}
-ensure
-[[ -f "$fixture_root/.ready" ]]
-EOF
-
-set +e
-CPKT_TOOLCHAIN_CACHE="$tmp_dir/invalid-timeout-cache" \
-CPKT_TOOLCHAIN_LOCK_TIMEOUT=invalid bash -s "$resolver" \
-  >"$tmp_dir/invalid-timeout.out" 2>"$tmp_dir/invalid-timeout.err" <<'EOF'
-set -euo pipefail
-resolver=$1
-source "$resolver"
-root() { printf '%s\n' /tmp/aflpp-fixture; }
-ready() { return 1; }
-ensure
-EOF
-invalid_timeout_status=$?
-set -e
-if [[ $invalid_timeout_status -eq 0 ]]; then
-  printf 'expected invalid AFL++ lock timeout to fail\n' >&2
-  exit 1
-fi
-grep -F 'CPKT_TOOLCHAIN_LOCK_TIMEOUT must be a positive integer' \
-  "$tmp_dir/invalid-timeout.err" >/dev/null
-
-# An AFL GCC plugin is compiler-specific. Changing the Bootlin collection
-# must select another immutable cache root rather than reuse an older plugin.
-cat >"$tmp_dir/bootlin" <<'EOF'
-#!/usr/bin/env bash
-printf 'archive=%s.tar.xz\n' "$TEST_BOOTLIN_COLLECTION"
-EOF
-chmod +x "$tmp_dir/bootlin"
-CPKT_TOOLCHAIN_CACHE="$tmp_dir/cache" bash -s "$resolver" "$tmp_dir/bootlin" <<'EOF'
-set -euo pipefail
-resolver=$1
-fixture_bootlin=$2
-source "$resolver"
-bootlin=$fixture_bootlin
-export TEST_BOOTLIN_COLLECTION=x86-64--glibc--stable-2025.08-1
-old_root=$(root)
-export TEST_BOOTLIN_COLLECTION=x86-64--glibc--stable-2026.08-1
-new_root=$(root)
-[[ "$old_root" != "$new_root" ]]
-[[ "$new_root" == *-x86-64--glibc--stable-2026.08-1 ]]
-[[ "$(root)" == "$new_root" ]]
-export TEST_BOOTLIN_COLLECTION=
-if (root); then
-  printf 'AFL cache accepted a missing Bootlin collection identity\n' >&2
-  exit 1
-fi
-EOF
+old=$(cat "$work/stale-path")
+extract=$(cat "$work/extract-path")
+[[ "$extract" != "$old/extract" && -f "$old/residue" && ! -e "${extract%/extract}" ]] ||
+  fail 'reused residue or failed to clean fresh staging'
+mv "$prepared/lib/afl/dynamic_list.txt.saved" "$prepared/lib/afl/dynamic_list.txt"
+printf 'AFL discovery/runtime contract passed\n'

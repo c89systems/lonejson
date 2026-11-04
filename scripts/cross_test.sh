@@ -4,15 +4,17 @@ set -euo pipefail
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
 
-exclude=${1:-}
-shift || true
-if [[ -z "$exclude" || $# -eq 0 ]]; then
-  printf 'usage: %s EXCLUDE_REGEX PRESET...\n' "$0" >&2
+if [[ $# -eq 0 ]]; then
+  printf 'usage: %s PRESET...\n' "$0" >&2
   exit 2
 fi
 
+configure_args=()
+if [[ ${LONEJSON_RELEASE_TARGETS+x} ]]; then
+  configure_args+=("-DLONEJSON_RELEASE_TARGETS=$LONEJSON_RELEASE_TARGETS")
+fi
 for preset in "$@"; do
-  cmake --preset "$preset"
+  cmake --preset "$preset" "${configure_args[@]}"
   cmake --build --preset "$preset"
-  ctest --preset "$preset" --output-on-failure -E "$exclude"
+  ctest --no-tests=error --preset "$preset" --output-on-failure
 done

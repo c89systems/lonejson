@@ -6,6 +6,35 @@ mkdir -p "$repo_root/build"
 tmp_dir=$(mktemp -d "$repo_root/build/clean-safety.XXXXXX")
 trap 'rm -rf "$tmp_dir"' EXIT
 
+# Full cleanup owns hidden state too and removes an alias itself, preserving
+# the external directory it points to.
+fixture="$tmp_dir/fixture"
+mkdir -p "$fixture/scripts" "$fixture/build/.hidden" "$fixture/.cache/.hidden" "$fixture/dist/.hidden" "$tmp_dir/global"
+cp "$repo_root/scripts/clean.sh" "$fixture/scripts/"
+printf retained >"$tmp_dir/global/sentinel"
+ln -s "$tmp_dir/global" "$fixture/build/borrowed"
+CPKT_TOOLCHAIN_CACHE="$tmp_dir/global" CPKT_DEPENDENCY_CACHE="$tmp_dir/global" "$fixture/scripts/clean.sh"
+[[ ! -e "$fixture/build" && ! -e "$fixture/dist" && ! -e "$fixture/.cache" ]]
+[[ $(cat "$tmp_dir/global/sentinel") == retained ]]
+ln -s "$tmp_dir/missing" "$fixture/build"
+"$fixture/scripts/clean.sh"
+[[ ! -L "$fixture/build" ]]
+
+# Selecting an external artifact directory must not leave the checkout's own
+# default dist behind during a full clean. Scoped cleanup preserves it.
+custom="$tmp_dir/selected-dist"
+mkdir -p "$custom" "$fixture/dist/.hidden"
+printf owned >"$custom/.lonejson-dist"
+printf retained >"$fixture/dist/.hidden/sentinel"
+"$fixture/scripts/clean.sh" --dist-only --dist-dir "$custom"
+[[ -f "$fixture/dist/.hidden/sentinel" && ! -e "$custom" ]]
+mkdir -p "$custom"
+printf owned >"$custom/.lonejson-dist"
+"$fixture/scripts/clean.sh" --dist-dir "$custom"
+[[ ! -e "$fixture/dist" && ! -e "$custom" ]] || {
+  printf 'full clean retained an owned artifact directory\n' >&2; exit 1;
+}
+
 set +e
 "$repo_root/scripts/clean.sh" --root "$tmp_dir" >"$tmp_dir/stdout" 2>"$tmp_dir/stderr"
 status=$?

@@ -34,7 +34,7 @@ mkdir -p "$stage_dir"
 
 if [[ -f "$manifest_path" ]]; then
   cp "$manifest_path" "$stage_dir/RELEASE_MANIFEST"
-  tar -C "$repo_root" -cf - -T "$manifest_path" | tar -xf - -C "$stage_dir"
+  tar -C "$repo_root" -cf - -T "$manifest_path" | tar -xpf - -C "$stage_dir"
 elif [[ "$git_root" == "$repo_root" ]]; then
   mkdir -p "$workspace_root/build"
   tmp_manifest="$(mktemp "$workspace_root/build/source-manifest.XXXXXX")"
@@ -44,7 +44,7 @@ elif [[ "$git_root" == "$repo_root" ]]; then
     printf '%s\n' "$path" >>"$tmp_manifest"
   done < <(git -C "$repo_root" ls-files -z)
   cp "$tmp_manifest" "$stage_dir/RELEASE_MANIFEST"
-  tar -C "$repo_root" -cf - -T "$tmp_manifest" | tar -xf - -C "$stage_dir"
+  tar -C "$repo_root" -cf - -T "$tmp_manifest" | tar -xpf - -C "$stage_dir"
 else
   printf 'source staging requires a git worktree or RELEASE_MANIFEST: %s\n' "$repo_root" >&2
   exit 1

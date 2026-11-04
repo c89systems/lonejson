@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/../LonejsonLifecycle.cmake")
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
   include("${CMAKE_CURRENT_LIST_DIR}/lonejson_native_darwin.cmake")
   return()
@@ -20,10 +21,10 @@ if(LONEJSON_OSXCROSS_HOST)
   set(ENV{CPKT_OSXCROSS_HOST} "${LONEJSON_OSXCROSS_HOST}")
 endif()
 execute_process(
-  COMMAND "${CMAKE_CURRENT_LIST_DIR}/../../scripts/cpkt-toolchains.sh" ensure arm64-apple-darwin
+  COMMAND "${CPKT_LIFECYCLE_SCRIPTS_DIR}/cpkt-toolchains.sh" discover arm64-apple-darwin
   RESULT_VARIABLE _darwin_status OUTPUT_VARIABLE _darwin_description ERROR_VARIABLE _darwin_error)
-if(NOT _darwin_status EQUAL 0 OR NOT _darwin_description MATCHES "status=ready")
-  message(FATAL_ERROR "Darwin lifecycle toolchain provisioning failed: ${_darwin_error}\n${_darwin_description}")
+if(NOT _darwin_status EQUAL 0 OR NOT _darwin_description MATCHES "(^|\n)status=ready(\n|$)")
+  message(FATAL_ERROR "Darwin lifecycle toolchain unavailable; run scripts/cpkt-toolchains.sh ensure arm64-apple-darwin before configuring: ${_darwin_error}\n${_darwin_description}")
 endif()
 foreach(_pair root:LONEJSON_OSXCROSS_ROOT prefix:LONEJSON_OSXCROSS_HOST
     cc:CMAKE_C_COMPILER cxx:CMAKE_CXX_COMPILER ld:CMAKE_LINKER ar:CMAKE_AR
@@ -87,9 +88,9 @@ endif()
 
 set(CMAKE_OSX_SYSROOT "${LONEJSON_OSXCROSS_SDK}" CACHE PATH "" FORCE)
 set(_lonejson_find_root_path "${LONEJSON_OSXCROSS_SDK}")
-if(DEFINED LONEJSON_C_PKT_SYSTEMS_ROOT AND
-    NOT "${LONEJSON_C_PKT_SYSTEMS_ROOT}" STREQUAL "")
-  list(APPEND _lonejson_find_root_path "${LONEJSON_C_PKT_SYSTEMS_ROOT}")
+if(DEFINED LONEJSON_CPKT_ROOT AND
+    NOT "${LONEJSON_CPKT_ROOT}" STREQUAL "")
+  list(APPEND _lonejson_find_root_path "${LONEJSON_CPKT_ROOT}")
 endif()
 set(CMAKE_FIND_ROOT_PATH ${_lonejson_find_root_path})
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)

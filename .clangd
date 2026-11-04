@@ -1,14 +1,8 @@
 CompileFlags:
   CompilationDatabase: build/debug
-  Remove:
-    - -std=*
-  Add:
-    - -D_POSIX_C_SOURCE=200809L
-    - -std=c89
-    - -Wall
-    - -Wextra
-    - -Wpedantic
-    - -pedantic-errors
+  # clangd skips header function bodies in its preamble. Keep its resulting
+  # unused-function warnings from exhausting the parser's error limit.
+  Remove: [-Werror]
 ---
 If:
   PathMatch: (dist|build|\\.cache)/.*

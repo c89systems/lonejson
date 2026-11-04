@@ -1,0 +1,36 @@
+# The selected payload inventory is shared by checksum generation and validation.
+if(NOT LONEJSON_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  message(FATAL_ERROR "LONEJSON_VERSION must be in X.Y.Z form")
+endif()
+if(NOT DEFINED LONEJSON_CHECKSUM_SCOPE)
+  set(LONEJSON_CHECKSUM_SCOPE full)
+endif()
+if(NOT LONEJSON_CHECKSUM_SCOPE MATCHES "^(full|binary)$")
+  message(FATAL_ERROR "LONEJSON_CHECKSUM_SCOPE must be full or binary")
+endif()
+set(lonejson_linux_release_targets x86_64-linux-gnu x86_64-linux-musl
+  aarch64-linux-gnu aarch64-linux-musl armhf-linux-gnu armhf-linux-musl)
+if(NOT DEFINED LONEJSON_RELEASE_TARGETS)
+  set(LONEJSON_RELEASE_TARGETS "${lonejson_linux_release_targets}")
+endif()
+if(NOT LONEJSON_RELEASE_TARGETS)
+  message(FATAL_ERROR "release target inventory is empty")
+endif()
+set(lonejson_release_artifacts
+  "lonejson-${LONEJSON_VERSION}.h.gz"
+  "lonejson-lua-${LONEJSON_VERSION}.tar.gz"
+  "lonejson-${LONEJSON_VERSION}-1.rockspec"
+  "lonejson-${LONEJSON_VERSION}-1.src.rock")
+if(LONEJSON_CHECKSUM_SCOPE STREQUAL "full")
+  list(APPEND lonejson_release_artifacts "lonejson-${LONEJSON_VERSION}.tar.gz")
+endif()
+foreach(target IN LISTS LONEJSON_RELEASE_TARGETS)
+  if(NOT target IN_LIST lonejson_linux_release_targets AND NOT target STREQUAL "arm64-apple-darwin")
+    message(FATAL_ERROR "unsupported release target: ${target}")
+  endif()
+  list(APPEND lonejson_release_artifacts "liblonejson-${LONEJSON_VERSION}-${target}.tar.gz")
+  if(target STREQUAL "arm64-apple-darwin")
+    list(APPEND lonejson_release_artifacts "liblonejson-${LONEJSON_VERSION}-${target}-smoke-test.zip")
+  endif()
+endforeach()
+list(SORT lonejson_release_artifacts)

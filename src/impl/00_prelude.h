@@ -180,7 +180,13 @@ typedef struct lonejson__parser_workspace_align_probe {
   "                                                                "
 
 #if defined(__GNUC__) || defined(__clang__)
+#if defined(__OPTIMIZE__)
 #define LONEJSON__INLINE __inline__ __attribute__((always_inline))
+#else
+/* Forced inlining at -O0 duplicates each helper's stack temporaries in callers.
+ * Recursive serializers must also fit the default 128 KiB musl worker stack. */
+#define LONEJSON__INLINE __inline__
+#endif
 #define LONEJSON__NOINLINE __attribute__((noinline))
 #define LONEJSON__COLD __attribute__((cold))
 #define LONEJSON__HOT __attribute__((hot))

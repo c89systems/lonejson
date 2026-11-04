@@ -47,6 +47,7 @@ else
   "$OTOOL" -L "$module_path" | grep -E 'liblonejson\.(dylib|[0-9]+\.dylib)' >/dev/null
 fi
 
-eval "$("$luarocks_exec" path --tree "$rock_tree")"
+resolved_environment=$("$luarocks_exec" path --tree "$rock_tree") || exit $?
+eval "$resolved_environment"
 printf '%s\n' 'assert(require("lonejson"))' >"$tmp_dir/smoke.lua"
 "$repo_root/scripts/run_installed_lua.sh" "$rock_tree" "$libdir" "$lua_exec" "$tmp_dir/smoke.lua"

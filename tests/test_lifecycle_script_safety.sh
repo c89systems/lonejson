@@ -6,9 +6,11 @@ work=$(mktemp -d "$repo_root/build/lifecycle-script-safety.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 root="$work/repo"
 mkdir -p "$root/scripts" "$work/bin" "$root/build/retained" "$work/seeds"
-for script in build package deps fuzz require_build_workspace ensure_large_fixtures smoke_darwin_release; do
+for script in build package deps fuzz require_build_workspace ensure_large_fixtures smoke_darwin_release detect_cpkt_bundle detect_native_target detect_native_bootlin_target; do
   cp "$repo_root/scripts/$script.sh" "$root/scripts/"
 done
+mkdir -p "$root/.cache/cpkt/x86_64-linux-gnu/root" "$root/cmake/toolchains"
+cp "$repo_root/cmake/toolchains/"{print_native_bootlin_target,lonejson_native_bootlin_target}.cmake "$root/cmake/toolchains/"
 cat >"$work/bin/cmake" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -24,7 +26,7 @@ printf '%s\n' "$3" >>"$TEST_LOG"
 SH
 chmod +x "$work/bin/"*
 export TEST_ROOT="$root" TEST_LOG="$work/dispatch.log"
-(cd "$work" && PATH="$work/bin:$PATH" "$root/scripts/build.sh" debug)
+(cd "$work" && LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu PATH="$work/bin:$PATH" "$root/scripts/build.sh" debug)
 [[ $(wc -l <"$TEST_LOG") == 2 ]]
 grep -F -- '--build --preset debug' "$TEST_LOG" >/dev/null
 : >"$TEST_LOG"

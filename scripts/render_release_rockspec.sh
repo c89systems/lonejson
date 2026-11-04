@@ -8,7 +8,7 @@ fi
 
 version="$1"
 output_path="$2"
-source_url="git+https://github.com/sa6mwa/lonejson.git"
+source_url="git+https://github.com/c89systems/lonejson.git"
 source_tag=""
 tag_line=""
 dir_line=""

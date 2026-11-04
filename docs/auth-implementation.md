@@ -35,8 +35,8 @@ without JWT is a configure error. JWT and OIDC builds without OpenSSL/curl are
 valid and must compile; trust operations that need crypto fail with an
 actionable missing-provider error until an auth provider is installed.
 
-When `LONEJSON_C_PKT_SYSTEMS_ROOT` is set, enabled integrations are resolved
-through the c.pkt.systems bundle. OIDC-capable release/package builds enable the
+When `LONEJSON_CPKT_ROOT` is set, enabled integrations are resolved
+through the cpkt bundle. OIDC-capable release/package builds enable the
 curl and JWT/OIDC integration surfaces but keep the OpenSSL adapter disabled for
 the plain core SDK. Normal consumers, and JWT/OIDC core consumers that provide
 their own auth providers, do not need curl or OpenSSL headers.
@@ -955,7 +955,7 @@ The implementation is covered by:
 - release archive verifier checks in `tests/test_release_archive_verify.sh`,
 - fuzzer coverage in `fuzz/fuzz_jwt.c`,
 - makefile fuzz target registration checks,
-- c.pkt.systems dependency route tests,
+- cpkt dependency route tests,
 - curl/OpenSSL dependency leakage checks,
 - release metadata checks,
 - OIDC/OAuth2 e2e in `scripts/test_oidc_e2e.sh`,

@@ -100,7 +100,7 @@ remove_path() {
             exit 1
             ;;
     esac
-    if [ -e "$target_path" ]; then
+    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
         rm -rf -- "$target_path"
     fi
 }
@@ -110,6 +110,7 @@ if [ "$mode" = "all" ]; then
         "$root_dir/scripts/devenv.sh" down
     fi
     remove_path "$root_dir/build"
+    remove_path "$root_dir/dist"
     remove_path "$root_dir/.cache"
     remove_path "$root_dir/.luarocks-build"
     remove_path "$root_dir/examples/bin"

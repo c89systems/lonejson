@@ -1,8 +1,8 @@
 /*
  * MIT License
  *
- * lonejson is Copyright (c) 2026 Michel Blomgren <mike@pkt.systems>
- * https://pkt.systems
+ * lonejson is Copyright (c) 2026 Michel Blomgren <mike@c89.systems>
+ * https://c89.systems
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -188,8 +188,8 @@ extern "C" {
  *
  * The project home, release artifacts, and full example programs are at:
  *
- *   https://github.com/sa6mwa/lonejson
- *   https://github.com/sa6mwa/lonejson/tree/trunk/examples
+ *   https://github.com/c89systems/lonejson
+ *   https://github.com/c89systems/lonejson/tree/trunk/examples
  *
  * In the normal linked-library build, include this header and link
  * `liblonejson`:

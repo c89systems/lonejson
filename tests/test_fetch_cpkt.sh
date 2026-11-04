@@ -8,9 +8,9 @@ mkdir -p "$workspace_root/build"
 # retryable without turning transient downloads into corrupted dependency roots.
 
 repo_root=$1
-tmp_dir=$(mktemp -d "$workspace_root/build/test_fetch_c_pkt_systems.XXXXXX")
+tmp_dir=$(mktemp -d "$workspace_root/build/test_fetch_cpkt.XXXXXX")
 
-bundle_dir_name="c.pkt.systems-0.10.0-x86_64-linux-gnu"
+bundle_dir_name="cpkt-0.6.1-x86_64-linux-gnu"
 assets_dir="$tmp_dir/assets"
 bundle_root="$assets_dir/$bundle_dir_name"
 success_root="$tmp_dir/success-root"
@@ -20,7 +20,6 @@ corrupt_root="$tmp_dir/corrupt-root"
 pinned_version_root="$tmp_dir/pinned-version-root"
 concurrent_first_root="$tmp_dir/concurrent-first-root"
 concurrent_second_root="$tmp_dir/concurrent-second-root"
-local_concurrent_root="$tmp_dir/local-concurrent-root"
 archive_path="$assets_dir/$bundle_dir_name.tar.gz"
 dependency_cache="$tmp_dir/dependency-cache"
 failure_dependency_cache="$tmp_dir/failure-dependency-cache"
@@ -39,6 +38,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+mkdir -p "$bundle_root/share/cpkt/packages"
+cat >"$bundle_root/share/cpkt/packages/core.json" <<'EOF'
+{"group":"core","release_version":"0.6.1","target_id":"x86_64-linux-gnu"}
+EOF
 mkdir -p \
   "$bundle_root/include/curl" \
   "$bundle_root/include/openssl" \
@@ -51,12 +54,14 @@ mkdir -p \
   "$bundle_root/lib/pkgconfig"
 
 cat >"$bundle_root/include/curl/curlver.h" <<'EOF'
-#define LIBCURL_VERSION "8.20.0"
+#define LIBCURL_VERSION "8.22.0"
 EOF
 cat >"$bundle_root/include/openssl/opensslv.h" <<'EOF'
-# define OPENSSL_VERSION_TEXT "OpenSSL 3.6.2 7 Apr 2026"
+# define OPENSSL_VERSION_TEXT "OpenSSL 3.6.5 29 Sep 2026"
 EOF
 touch \
+  "$bundle_root/include/lua.h" \
+  "$bundle_root/lib/liblua.so" \
   "$bundle_root/include/nghttp2/nghttp2.h" \
   "$bundle_root/include/zlib.h" \
   "$bundle_root/lib/libcurl.so" \
@@ -77,56 +82,75 @@ archive_sha256=$(sha256sum "$archive_path" | awk '{print $1}')
 success_log="$tmp_dir/success.log"
 cmake \
   -D LONEJSON_SOURCE_DIR="$success_root" \
-  -D LONEJSON_C_PKT_SYSTEMS_TARGET_ID=x86_64-linux-gnu \
-  -D LONEJSON_C_PKT_SYSTEMS_BASE_URL="file://$assets_dir" \
+  -D LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu \
+  -D LONEJSON_CPKT_BASE_URL="file://$assets_dir" \
   -D CPKT_DEPENDENCY_CACHE="$dependency_cache" \
-  -D LONEJSON_C_PKT_SYSTEMS_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
-  -D LONEJSON_C_PKT_SYSTEMS_DOWNLOAD_RETRIES=3 \
-  -D LONEJSON_C_PKT_SYSTEMS_RETRY_DELAY_SECONDS=0 \
-  -D LONEJSON_C_PKT_SYSTEMS_TEST_FAIL_DOWNLOAD_ATTEMPTS=2 \
-  -P "$repo_root/cmake/fetch_c_pkt_systems.cmake" \
+  -D LONEJSON_CPKT_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
+  -D LONEJSON_CPKT_DOWNLOAD_RETRIES=3 \
+  -D LONEJSON_CPKT_RETRY_DELAY_SECONDS=0 \
+  -D LONEJSON_CPKT_TEST_FAIL_DOWNLOAD_ATTEMPTS=2 \
+  -P "$repo_root/cmake/fetch_cpkt.cmake" \
   >"$success_log" 2>&1
 
 grep -q 'download attempt 1/3 failed' "$success_log"
 grep -q 'download attempt 2/3 failed' "$success_log"
-test -f "$success_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/include/curl/curlver.h"
-test -f "$success_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/lib/cmake/CURL/CURLConfig.cmake"
-test -f "$success_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/lib/pkgconfig/libcurl.pc"
-test -f "$success_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/.lonejson-c-pkt-systems-identity"
+test -f "$success_root/.cache/cpkt/x86_64-linux-gnu/root/include/curl/curlver.h"
+test -f "$success_root/.cache/cpkt/x86_64-linux-gnu/root/lib/cmake/CURL/CURLConfig.cmake"
+test -f "$success_root/.cache/cpkt/x86_64-linux-gnu/root/lib/pkgconfig/libcurl.pc"
+test -f "$success_root/.cache/cpkt/x86_64-linux-gnu/root/.lonejson-cpkt-identity"
 test -f "$dependency_cache/archives/sha256/$archive_sha256/$bundle_dir_name.tar.gz"
-test ! -e "$success_root/.cache/c.pkt.systems/x86_64-linux-gnu/$bundle_dir_name.tar.gz"
+test ! -e "$success_root/.cache/cpkt/x86_64-linux-gnu/$bundle_dir_name.tar.gz"
+
+# A reusable extraction still has to carry the selected provider identity.
+manifest="$success_root/.cache/cpkt/x86_64-linux-gnu/root/share/cpkt/packages/core.json"
+cp "$manifest" "$tmp_dir/manifest.json"
+for wrong in '{"group":"db","release_version":"0.6.1","target_id":"x86_64-linux-gnu"}' \
+    '{"group":"core","release_version":"0.6.0","target_id":"x86_64-linux-gnu"}' \
+    '{"group":"core","release_version":"0.6.1","target_id":"aarch64-linux-gnu"}' \
+    '{}'; do
+  printf '%s\n' "$wrong" >"$manifest"
+  if cmake -D "LONEJSON_SOURCE_DIR=$success_root" \
+      -D LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu \
+      -D "LONEJSON_CPKT_BASE_URL=file://$assets_dir" \
+      -D "LONEJSON_CPKT_EXPECTED_SHA256_OVERRIDE=$archive_sha256" \
+      -P "$repo_root/cmake/fetch_cpkt.cmake" >"$tmp_dir/wrong-identity.log" 2>&1; then
+    printf 'accepted incorrect cpkt provider identity\n' >&2; exit 1
+  fi
+  grep -E 'Wrong cpkt package identity|Invalid cpkt core package manifest' "$tmp_dir/wrong-identity.log" >/dev/null
+done
+cp "$tmp_dir/manifest.json" "$manifest"
 
 # A local extraction is disposable: the verified shared archive supports a
 # fresh offline extraction without consulting the network.
 offline_log="$tmp_dir/offline.log"
 cmake \
   -D LONEJSON_SOURCE_DIR="$offline_root" \
-  -D LONEJSON_C_PKT_SYSTEMS_TARGET_ID=x86_64-linux-gnu \
-  -D LONEJSON_C_PKT_SYSTEMS_BASE_URL="file://$tmp_dir/missing-assets" \
+  -D LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu \
+  -D LONEJSON_CPKT_BASE_URL="file://$tmp_dir/missing-assets" \
   -D CPKT_DEPENDENCY_CACHE="$dependency_cache" \
-  -D LONEJSON_C_PKT_SYSTEMS_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
-  -P "$repo_root/cmake/fetch_c_pkt_systems.cmake" \
+  -D LONEJSON_CPKT_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
+  -P "$repo_root/cmake/fetch_cpkt.cmake" \
   >"$offline_log" 2>&1
-test -f "$offline_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/include/curl/curlver.h"
+test -f "$offline_root/.cache/cpkt/x86_64-linux-gnu/root/include/curl/curlver.h"
 
 failure_log="$tmp_dir/failure.log"
 if cmake \
   -D LONEJSON_SOURCE_DIR="$failure_root" \
-  -D LONEJSON_C_PKT_SYSTEMS_TARGET_ID=x86_64-linux-gnu \
-  -D LONEJSON_C_PKT_SYSTEMS_BASE_URL="file://$assets_dir" \
+  -D LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu \
+  -D LONEJSON_CPKT_BASE_URL="file://$assets_dir" \
   -D CPKT_DEPENDENCY_CACHE="$failure_dependency_cache" \
-  -D LONEJSON_C_PKT_SYSTEMS_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
-  -D LONEJSON_C_PKT_SYSTEMS_DOWNLOAD_RETRIES=3 \
-  -D LONEJSON_C_PKT_SYSTEMS_RETRY_DELAY_SECONDS=0 \
-  -D LONEJSON_C_PKT_SYSTEMS_TEST_FAIL_DOWNLOAD_ATTEMPTS=3 \
-  -P "$repo_root/cmake/fetch_c_pkt_systems.cmake" \
+  -D LONEJSON_CPKT_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
+  -D LONEJSON_CPKT_DOWNLOAD_RETRIES=3 \
+  -D LONEJSON_CPKT_RETRY_DELAY_SECONDS=0 \
+  -D LONEJSON_CPKT_TEST_FAIL_DOWNLOAD_ATTEMPTS=3 \
+  -P "$repo_root/cmake/fetch_cpkt.cmake" \
   >"$failure_log" 2>&1; then
-  printf 'expected fetch_c_pkt_systems.cmake to fail after exhausting retries\n' >&2
+  printf 'expected fetch_cpkt.cmake to fail after exhausting retries\n' >&2
   exit 1
 fi
 
 grep -q 'failed to acquire verified archive' "$failure_log"
-test ! -e "$failure_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/.lonejson-c-pkt-systems-version"
+test ! -e "$failure_root/.cache/cpkt/x86_64-linux-gnu/root/.lonejson-cpkt-identity"
 
 # A corrupted global entry is rejected before extraction and is never treated
 # as a cache hit.
@@ -134,34 +158,34 @@ printf '%s\n' corrupt >"$dependency_cache/archives/sha256/$archive_sha256/$bundl
 corrupt_log="$tmp_dir/corrupt.log"
 if cmake \
   -D LONEJSON_SOURCE_DIR="$corrupt_root" \
-  -D LONEJSON_C_PKT_SYSTEMS_TARGET_ID=x86_64-linux-gnu \
-  -D LONEJSON_C_PKT_SYSTEMS_BASE_URL="file://$tmp_dir/missing-assets" \
+  -D LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu \
+  -D LONEJSON_CPKT_BASE_URL="file://$tmp_dir/missing-assets" \
   -D CPKT_DEPENDENCY_CACHE="$dependency_cache" \
-  -D LONEJSON_C_PKT_SYSTEMS_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
-  -P "$repo_root/cmake/fetch_c_pkt_systems.cmake" \
+  -D LONEJSON_CPKT_EXPECTED_SHA256_OVERRIDE="$archive_sha256" \
+  -P "$repo_root/cmake/fetch_cpkt.cmake" \
   >"$corrupt_log" 2>&1; then
   printf 'expected corrupt shared archive to be rejected\n' >&2
   exit 1
 fi
 grep -q 'discarding corrupt shared cache archive' "$corrupt_log"
-test ! -e "$corrupt_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/.lonejson-c-pkt-systems-identity"
+test ! -e "$corrupt_root/.cache/cpkt/x86_64-linux-gnu/root/.lonejson-cpkt-identity"
 test ! -e "$dependency_cache/archives/sha256/$archive_sha256/$bundle_dir_name.tar.gz"
 
 pinned_version_log="$tmp_dir/pinned-version.log"
 if cmake \
   -D LONEJSON_SOURCE_DIR="$pinned_version_root" \
   -D CPKT_DEPENDENCY_CACHE="$tmp_dir/pinned-version-cache" \
-  -D LONEJSON_C_PKT_SYSTEMS_VERSION=0.2.0 \
-  -D LONEJSON_C_PKT_SYSTEMS_TARGET_ID=x86_64-linux-gnu \
-  -D LONEJSON_C_PKT_SYSTEMS_BASE_URL="file://$assets_dir" \
-  -P "$repo_root/cmake/fetch_c_pkt_systems.cmake" \
+  -D LONEJSON_CPKT_VERSION=0.2.0 \
+  -D LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu \
+  -D LONEJSON_CPKT_BASE_URL="file://$assets_dir" \
+  -P "$repo_root/cmake/fetch_cpkt.cmake" \
   >"$pinned_version_log" 2>&1; then
-  printf 'expected c.pkt.systems version override to fail before download\n' >&2
+  printf 'expected cpkt version override to fail before download\n' >&2
   exit 1
 fi
 
-grep -q 'LONEJSON_C_PKT_SYSTEMS_VERSION is not configurable' "$pinned_version_log"
-test ! -e "$pinned_version_root/.cache/c.pkt.systems"
+grep -q 'LONEJSON_CPKT_VERSION is not configurable' "$pinned_version_log"
+test ! -e "$pinned_version_root/.cache/cpkt"
 
 # Two independent consumers must never observe a partial archive in the shared
 # cache.  Hold the first process after it owns the per-digest lock, then start
@@ -173,15 +197,15 @@ fetch_concurrent() {
   local -a command=(
     cmake
     -D "LONEJSON_SOURCE_DIR=$source_root"
-    -D LONEJSON_C_PKT_SYSTEMS_TARGET_ID=x86_64-linux-gnu
-    -D "LONEJSON_C_PKT_SYSTEMS_BASE_URL=file://$assets_dir"
+    -D LONEJSON_CPKT_TARGET_ID=x86_64-linux-gnu
+    -D "LONEJSON_CPKT_BASE_URL=file://$assets_dir"
     -D "CPKT_DEPENDENCY_CACHE=$concurrent_dependency_cache"
-    -D "LONEJSON_C_PKT_SYSTEMS_EXPECTED_SHA256_OVERRIDE=$archive_sha256"
+    -D "LONEJSON_CPKT_EXPECTED_SHA256_OVERRIDE=$archive_sha256"
   )
   if [[ -n "$hold_seconds" ]]; then
     command+=( -D "CPKT_DEPENDENCY_CACHE_TEST_HOLD_LOCK_SECONDS=$hold_seconds" )
   fi
-  command+=( -P "$repo_root/cmake/fetch_c_pkt_systems.cmake" )
+  command+=( -P "$repo_root/cmake/fetch_cpkt.cmake" )
   "${command[@]}" >"$log_path" 2>&1
 }
 
@@ -221,78 +245,10 @@ second_pid=
 concurrent_archive="$concurrent_dependency_cache/archives/sha256/$archive_sha256/$bundle_dir_name.tar.gz"
 test -f "$concurrent_archive"
 [[ "$(sha256sum "$concurrent_archive" | awk '{print $1}')" == "$archive_sha256" ]]
-test -f "$concurrent_first_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/.lonejson-c-pkt-systems-identity"
-test -f "$concurrent_second_root/.cache/c.pkt.systems/x86_64-linux-gnu/root/.lonejson-c-pkt-systems-identity"
+test -f "$concurrent_first_root/.cache/cpkt/x86_64-linux-gnu/root/.lonejson-cpkt-identity"
+test -f "$concurrent_second_root/.cache/cpkt/x86_64-linux-gnu/root/.lonejson-cpkt-identity"
 grep -q 'reusing verified shared archive cache entry' "$second_log"
 if find "$(dirname -- "$concurrent_archive")" -maxdepth 1 -type f -name '.*.tmp' -print -quit | grep -q .; then
   printf 'concurrent cache acquisition left a temporary archive behind\n' >&2
-  exit 1
-fi
-
-# Two lifecycle commands in one checkout must serialize local extraction.  The
-# second process must revalidate the stamp after acquiring the per-target lock
-# instead of deleting the first process's root or staging tree.
-fetch_local_concurrent() {
-  local log_path=$1
-  local hold_seconds=${2:-}
-  local -a command=(
-    cmake
-    -D "LONEJSON_SOURCE_DIR=$local_concurrent_root"
-    -D LONEJSON_C_PKT_SYSTEMS_TARGET_ID=x86_64-linux-gnu
-    -D "LONEJSON_C_PKT_SYSTEMS_BASE_URL=file://$tmp_dir/missing-assets"
-    -D "CPKT_DEPENDENCY_CACHE=$concurrent_dependency_cache"
-    -D "LONEJSON_C_PKT_SYSTEMS_EXPECTED_SHA256_OVERRIDE=$archive_sha256"
-  )
-  if [[ -n "$hold_seconds" ]]; then
-    command+=(
-      -D "LONEJSON_C_PKT_SYSTEMS_TEST_HOLD_EXTRACTION_LOCK_SECONDS=$hold_seconds"
-    )
-  fi
-  command+=( -P "$repo_root/cmake/fetch_c_pkt_systems.cmake" )
-  "${command[@]}" >"$log_path" 2>&1
-}
-
-local_first_log="$tmp_dir/local-concurrent-first.log"
-local_second_log="$tmp_dir/local-concurrent-second.log"
-fetch_local_concurrent "$local_first_log" 2 &
-first_pid=$!
-for _ in $(seq 1 100); do
-  if grep -q 'test hook holding checkout-local extraction lock' "$local_first_log"; then
-    break
-  fi
-  if ! kill -0 "$first_pid" 2>/dev/null; then
-    cat "$local_first_log" >&2
-    exit 1
-  fi
-  sleep 0.05
-done
-if ! grep -q 'test hook holding checkout-local extraction lock' "$local_first_log"; then
-  printf 'first local extraction did not acquire its checkout lock\n' >&2
-  cat "$local_first_log" >&2
-  exit 1
-fi
-
-fetch_local_concurrent "$local_second_log" &
-second_pid=$!
-if ! wait "$first_pid"; then
-  cat "$local_first_log" >&2
-  exit 1
-fi
-first_pid=
-if ! wait "$second_pid"; then
-  cat "$local_second_log" >&2
-  exit 1
-fi
-second_pid=
-
-local_extract_root="$local_concurrent_root/.cache/c.pkt.systems/x86_64-linux-gnu/root"
-test -f "$local_extract_root/.lonejson-c-pkt-systems-identity"
-test -f "$local_extract_root/include/curl/curlver.h"
-test ! -e "$local_concurrent_root/.cache/c.pkt.systems/x86_64-linux-gnu/extract"
-grep -q 'Extracting ' "$local_first_log"
-grep -q 'bundle already extracted' "$local_second_log"
-if grep -q 'Extracting ' "$local_second_log"; then
-  printf 'second local extraction did not reuse the first process result\n' >&2
-  cat "$local_second_log" >&2
   exit 1
 fi

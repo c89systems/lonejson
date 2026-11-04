@@ -23,11 +23,11 @@ if [[ "$(uname -s)" != Linux ]]; then
 fi
 target_id=$("$root/scripts/detect_native_bootlin_target.sh")
 "$root/scripts/deps.sh" "$target_id" >/dev/null
-bundle_root="$root/.cache/c.pkt.systems/$target_id/root"
+bundle_root="$root/.cache/cpkt/$target_id/root"
 cmake -S "$root/cmake/lua_sdk_smoke" -B "$workspace/runner" -G Ninja \
   -D "CMAKE_TOOLCHAIN_FILE=$root/cmake/toolchains/native.cmake" \
   -D "LONEJSON_REPO_ROOT=$root" -D "LONEJSON_CORE_LIBDIR=$core_libdir" \
-  -D "LONEJSON_C_PKT_SYSTEMS_ROOT=$bundle_root" >/dev/null
+  -D "LONEJSON_CPKT_ROOT=$bundle_root" >/dev/null
 cmake --build "$workspace/runner" >/dev/null
 "$root/tests/test_bootlin_runtime.sh" "$workspace/runner" "$workspace/runner/installed_lua"
 module=$(find "$tree" -type f -path '*/lonejson/core.so' | LC_ALL=C sort | sed -n '1p')

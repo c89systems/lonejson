@@ -40,6 +40,16 @@ bootlin_target=$(printf '%s\n' "$bootlin_description" | sed -n 's/^target_triple
 bootlin_libstdcxx_a=$(printf '%s\n' "$bootlin_description" | sed -n 's/^libstdcxx_a=//p')
 bootlin_libgcc_a=$(printf '%s\n' "$bootlin_description" | sed -n 's/^libgcc_a=//p')
 
+# Configure must report a missing prepared input without downloading or creating
+# cache state, including during compiler probes.
+if CPKT_TOOLCHAIN_CACHE="$tmp_dir/missing-cache" "$cmake_cmd" \
+    -S "$repo_root" -B "$tmp_dir/missing-build" -G Ninja \
+    -D LONEJSON_BUILD_TESTS=OFF >"$tmp_dir/missing.log" 2>&1; then
+  printf 'configure accepted an unprepared compiler\n' >&2; exit 1
+fi
+grep -F 'Missing prepared Bootlin' "$tmp_dir/missing.log" >/dev/null
+[[ ! -e "$tmp_dir/missing-cache" ]]
+
 [[ "$($bootlin_cc -dumpmachine)" == "$bootlin_target" ]]
 [[ -x "$bootlin_cxx" ]]
 [[ -x "$bootlin_ld" ]]

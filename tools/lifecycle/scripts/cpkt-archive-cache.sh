@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Shared local-byte lookup for pinned toolchain archives. Call under the
-# resolver's cache lock; downloads and extraction remain owned by the caller.
+case ${BASH_SOURCE[0]} in
+  */*) source "${BASH_SOURCE[0]%/*}/require-host-bash.sh" ;;
+  *) source ./require-host-bash.sh ;;
+esac || exit $?
+# Foreground helpers inherit the caller's job group. The caller cancels the whole
+# job, not one wrapper PID; process supervision is outside this helper's contract.
+
+# Call archive lookup under the resolver's cache lock; the caller owns extraction.
 
 cpkt_cached_archive_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
+    sha256sum < "$1" | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{print $1}'
+    shasum -a 256 < "$1" | awk '{print $1}'
   else
     printf 'cpkt-archive-cache: sha256sum or shasum is required\n' >&2
     return 1
@@ -25,7 +31,7 @@ cpkt_restore_cached_archive() (
   fi
   for candidate in "$(dirname -- "$destination")"/*; do
     [[ -f "$candidate" ]] || continue
-    case "${candidate##*/}" in .*|*.tmp|*.tmp.*|*.part|*.part.*|*.part-*) continue ;; esac
+    case "${candidate##*/}" in .*|*.tmp.*|*.part-*) continue ;; esac
     actual=$(cpkt_cached_archive_sha256 "$candidate") || exit 1
     [[ "$actual" == "$expected" ]] || continue
     temporary=$(mktemp "${destination}.tmp.XXXXXXXXXX") || exit 1

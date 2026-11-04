@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+build_dir=${LONEJSON_E2E_BUILD_DIR:-$repo_root/build/host-curl}
 oidc_port=${LONEJSON_OIDC_E2E_PORT:-18443}
 api_fixture_port=${LONEJSON_API_FIXTURE_E2E_PORT:-18080}
 issuer=${LONEJSON_OIDC_E2E_ISSUER:-https://localhost:${oidc_port}/default}
@@ -24,7 +25,7 @@ trap cleanup EXIT
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     printf 'missing required command for OIDC e2e: %s\n' "$1" >&2
-    exit 77
+    exit 1
   fi
 }
 
@@ -41,18 +42,7 @@ wait_url() {
   return 1
 }
 
-json_field() {
-  local field=$1
-  python3 -c '
-import json
-import sys
-field = sys.argv[1]
-value = json.load(sys.stdin).get(field)
-if value is None:
-    sys.exit(2)
-print(value)
-' "$field"
-}
+source "$repo_root/tests/json_helpers.sh"
 
 client_credentials_token() {
   local client_id=$1
@@ -74,14 +64,7 @@ assert_protected_authorized() {
   local label=$2
   curl -fsS --max-time 5 "http://127.0.0.1:$server_port/protected" \
     -H "Authorization: Bearer $token" \
-    | python3 -c '
-import json
-import sys
-label = sys.argv[1]
-value = json.load(sys.stdin)
-if value.get("ok") is not True or value.get("authorized") is not True:
-    raise SystemExit(f"{label}: lonejson fixture server did not authorize token")
-' "$label"
+    | json_assert ok=true authorized=true
 }
 
 assert_protected_rejected() {
@@ -103,19 +86,7 @@ assert_protected_rejected() {
     printf '%s\n' "$body" >&2
     exit 1
   fi
-  printf '%s' "$body" | python3 -c '
-import json
-import sys
-label = sys.argv[1]
-expected = sys.argv[2]
-value = json.load(sys.stdin)
-if value.get("ok") is not False or value.get("authorized") is not False:
-    raise SystemExit(f"{label}: rejection body did not mark request unauthorized")
-if value.get("failure") != expected:
-    raise SystemExit(
-        f"{label}: expected failure {expected!r}, got {value.get('failure')!r}"
-    )
-' "$label" "$expected_failure"
+  printf '%s' "$body" | json_assert ok=false authorized=false "failure=$expected_failure"
 }
 
 assert_protected_missing_bearer_rejected() {
@@ -133,23 +104,13 @@ assert_protected_missing_bearer_rejected() {
     printf '%s\n' "$body" >&2
     exit 1
   fi
-  printf '%s' "$body" | python3 -c '
-import json
-import sys
-value = json.load(sys.stdin)
-if value.get("ok") is not False or value.get("authorized") is not False:
-    raise SystemExit("missing bearer: rejection body did not mark request unauthorized")
-if value.get("failure") != "missing_credentials":
-    raise SystemExit(
-        f"missing bearer: expected failure 'missing_credentials', got {value.get('failure')!r}"
-    )
-'
+  printf '%s' "$body" | json_assert ok=false authorized=false failure=missing_credentials
 }
 
 require_command curl
-require_command python3
+require_command cmake
 
-if [[ ! -x "$repo_root/build/host-curl/lonejson_oidc_fixture_server" ]]; then
+if [[ ! -x "$build_dir/lonejson_oidc_fixture_server" ]]; then
   printf 'missing build/host-curl/lonejson_oidc_fixture_server; run make test-oidc-e2e\n' >&2
   exit 1
 fi
@@ -186,13 +147,7 @@ authorization_location="$(
     | tr -d '\r'
 )"
 authorization_code="$(
-  printf '%s' "$authorization_location" | python3 -c '
-import sys
-import urllib.parse
-location = sys.stdin.read().strip()
-query = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
-print(query["code"][0])
-'
+  url_query_field "$authorization_location" code
 )"
 authorization_token_json="$(
   curl -fsS --max-time 10 --cacert "$ca_file" -X POST "$token_endpoint" \
@@ -211,23 +166,11 @@ curl -fsS --max-time 10 --cacert "$ca_file" -X POST "$introspection_endpoint" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode "token=$authorization_access_token" \
   --data-urlencode 'token_type_hint=access_token' \
-  | python3 -c '
-import json
-import sys
-value = json.load(sys.stdin)
-if value.get("active") is not True:
-    raise SystemExit("authorization-code access token is not introspection-active")
-'
+  | json_assert active=true
 
 curl -fsS --max-time 10 --cacert "$ca_file" "$userinfo_endpoint" \
   -H "Authorization: Bearer $authorization_access_token" \
-  | python3 -c '
-import json
-import sys
-value = json.load(sys.stdin)
-if not value.get("iss"):
-    raise SystemExit("userinfo response did not include issuer")
-'
+  | json_field iss | grep -q .
 
 refresh_json="$(
   curl -fsS --max-time 10 --cacert "$ca_file" -X POST "$token_endpoint" \
@@ -244,7 +187,7 @@ if [[ -z "$rotated_refresh_token" ]]; then
 fi
 
 LONEJSON_OIDC_E2E_CAINFO="$ca_file" \
-  "$repo_root/build/host-curl/lonejson_oidc_fixture_server" \
+  "$build_dir/lonejson_oidc_fixture_server" \
   "$issuer" "$audience" "$server_port" 10 \
   "$authorization_access_token" "$rotated_refresh_token" \
   >"$repo_root/build/devenv/logs/oidc-fixture-server.log" 2>&1 &

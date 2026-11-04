@@ -6,6 +6,8 @@ mkdir -p "$workspace_root/build"
 
 repo_root=${1:?usage: verify_release_artifacts.sh REPO_ROOT [CHECKSUMS]}
 checksums=${2:-}
+scope=${4:-full}
+case "$scope" in full|binary) ;; *) printf 'unknown artifact scope: %s\n' "$scope" >&2; exit 2 ;; esac
 
 repo_root="$(CDPATH= cd -- "$repo_root" && pwd)"
 if [[ -z "$checksums" ]]; then
@@ -17,8 +19,9 @@ if [[ ! -f "$checksums" ]]; then
   exit 1
 fi
 
-dist_dir="$(CDPATH= cd -- "$(dirname -- "$checksums")" && pwd)"
-checksums_name="$(basename -- "$checksums")"
+dist_dir="$(CDPATH= cd -- "${3:-$(dirname -- "$checksums")}" && pwd)"
+checksums="$(CDPATH= cd -- "$(dirname -- "$checksums")" && pwd -P)/$(basename -- "$checksums")"
+checksums_name=${checksums##*/}
 tmp_dir="$(mktemp -d "$workspace_root/build/verify_release_artifacts.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -45,7 +48,7 @@ require_command grep
 require_command strings
 require_command file
 
-(cd "$dist_dir" && sha256sum -c "$checksums_name" >/dev/null)
+(cd "$dist_dir" && sha256sum -c "$checksums" >/dev/null)
 
 declare -a artifacts=()
 while read -r _hash artifact; do
@@ -68,6 +71,7 @@ if [[ ${#artifacts[@]} -eq 0 ]]; then
   exit 1
 fi
 
+if [[ "$scope" == full ]]; then
 while IFS= read -r dist_file; do
   file_name="$(basename -- "$dist_file")"
   listed=0
@@ -86,6 +90,7 @@ done < <(find "$dist_dir" -maxdepth 1 -type f \
   \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.zip' -o -name '*.rock' \
      -o -name '*.src.rock' -o -name '*.rockspec' -o -name '*.h.gz' \) |
   sort)
+fi
 
 scan_text_for_local_paths() {
   local artifact=$1
@@ -125,7 +130,7 @@ scan_shipped_payload_for_bootlin_toolchain_paths() {
   # Bootlin collection.  Match both the lifecycle cache layout and the stable
   # collection directory itself so a CPKT_TOOLCHAIN_CACHE override cannot hide
   # the leak behind a different parent directory.
-  toolchain_path_pattern='/(c\.pkt\.systems/)?toolchains(/roots)?/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
+  toolchain_path_pattern='/(cpkt/)?toolchains(/roots)?/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
 
   while IFS= read -r file_path; do
     rel_path="${file_path#"$root"/}"
@@ -179,14 +184,16 @@ scan_loader_metadata() {
     for candidate in x86_64-linux-gnu x86_64-linux-musl aarch64-linux-gnu aarch64-linux-musl armhf-linux-gnu armhf-linux-musl arm64-apple-darwin; do
       if [[ "$artifact" == *"-$candidate"* ]]; then target_id=$candidate; break; fi
     done
-    eval "$("$repo_root/scripts/discover_target_tools.sh" \
-      --build-dir "$repo_root/build/$target_id-release" --target-id "$target_id")"
+    local description
+    description=$("$repo_root/scripts/discover_target_tools.sh" \
+      --build-dir "$repo_root/build/$target_id-release" --target-id "$target_id") || exit 1
+    eval "$description"
     tools_loaded=1
   }
 
   # Keep this separate from the general path scan: ELF interpreter and
   # RPATH metadata must never point at a pinned Bootlin collection.
-  bootlin_loader_path_pattern='c\.pkt\.systems/toolchains/|/(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-'
+  bootlin_loader_path_pattern='cpkt/toolchains/|/(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-'
 
   while IFS= read -r file_path; do
     rel_path="${file_path#"$root"/}"
@@ -203,7 +210,7 @@ scan_loader_metadata() {
               "pinned Bootlin ELF interpreter or RPATH leaked"
           fi
           if printf '%s\n' "$metadata" | grep -E \
-              '(libasan|libtsan|RUNPATH|RPATH|Requesting program interpreter).*(/home/|/tmp/|/var/tmp|/build/|/\.cache/|/\.deps/|c\.pkt\.systems/toolchains/|--(glibc|musl)--stable-)' \
+              '(libasan|libtsan|RUNPATH|RPATH|Requesting program interpreter).*(/home/|/tmp/|/var/tmp|/build/|/\.cache/|/\.deps/|cpkt/toolchains/|--(glibc|musl)--stable-)' \
               >/dev/null; then
             fail_artifact "$artifact" "$rel_path" \
               "non-relocatable, pinned Bootlin, or sanitizer ELF loader metadata"
@@ -218,7 +225,7 @@ scan_loader_metadata() {
           $1 == "name" || $1 == "path" { print }
         ')"
           if printf '%s\n' "$metadata" | grep -E \
-              '(libasan|libtsan|/home/|/tmp/|/var/tmp|/build/|/\.cache/|/\.deps/|c\.pkt\.systems/toolchains/|--(glibc|musl)--stable-)' \
+              '(libasan|libtsan|/home/|/tmp/|/var/tmp|/build/|/\.cache/|/\.deps/|cpkt/toolchains/|--(glibc|musl)--stable-)' \
               >/dev/null; then
             fail_artifact "$artifact" "$rel_path" \
               "non-relocatable, pinned Bootlin, or sanitizer Mach-O loader metadata"

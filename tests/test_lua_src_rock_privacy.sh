@@ -47,3 +47,15 @@ if "$repo_root/scripts/smoke_lua_src_rock.sh" "$bad_rock" >"$failure_log" 2>&1; 
 fi
 
 grep -Eq 'absolute local file:// URL|repository path' "$failure_log"
+
+cp "$rockspec" "$tmp_dir/original.rockspec"
+for source_url in 'file://lonejson-lua-0.0.0.tar.gz' ''; do
+  sed "s|file://${repo_root}/dist/.pack/lonejson-0.0.0.tar.gz|$source_url|" \
+    "$tmp_dir/original.rockspec" >"$rockspec"
+  rm -f "$bad_rock"
+  zip -q -j "$bad_rock" "$rockspec" "$source_tarball"
+  if "$repo_root/scripts/smoke_lua_src_rock.sh" "$bad_rock" >"$failure_log" 2>&1; then
+    printf 'source rock accepted a missing or local source URL\n' >&2; exit 1
+  fi
+  grep -F 'public HTTPS source URL' "$failure_log" >/dev/null
+done

@@ -37,9 +37,10 @@ cat >"$build_dir/CMakeCache.txt" <<EOF
 CMAKE_C_COMPILER:FILEPATH=$fake_bin/arm64-apple-darwin25.4-clang
 EOF
 
-eval "$("$repo_root/scripts/discover_target_tools.sh" \
+resolved_environment=$("$repo_root/scripts/discover_target_tools.sh" \
   --build-dir "$build_dir" \
-  --target-id arm64-apple-darwin)"
+  --target-id arm64-apple-darwin) || exit $?
+eval "$resolved_environment"
 
 [[ "$CC" == "$fake_bin/arm64-apple-darwin25.4-clang" ]]
 [[ "$TARGET_HOST_PREFIX" == "arm64-apple-darwin25.4" ]]
@@ -65,9 +66,10 @@ cat >"$build_dir/CMakeCache.txt" <<EOF
 CMAKE_C_COMPILER:FILEPATH=$darwin_cc_only/arm64-apple-darwin25.4-clang
 EOF
 
-eval "$(PATH="$host_bin:/usr/bin:/bin" "$repo_root/scripts/discover_target_tools.sh" \
+resolved_environment=$(PATH="$host_bin:/usr/bin:/bin" "$repo_root/scripts/discover_target_tools.sh" \
   --build-dir "$build_dir" \
-  --target-id arm64-apple-darwin)"
+  --target-id arm64-apple-darwin) || exit $?
+eval "$resolved_environment"
 
 [[ "$CC" == "$darwin_cc_only/arm64-apple-darwin25.4-clang" ]]
 [[ "$TARGET_HOST_PREFIX" == "arm64-apple-darwin25.4" ]]
@@ -101,22 +103,24 @@ for spec in \
 done
 rm -f "$build_dir/CMakeCache.txt"
 
-eval "$(PATH="/usr/bin:/bin" \
+resolved_environment=$(PATH="/usr/bin:/bin" \
   CPKT_TOOLCHAIN_CACHE="$toolchain_cache" \
   "$repo_root/scripts/discover_target_tools.sh" \
     --build-dir "$build_dir" \
-    --target-id aarch64-linux-musl)"
+    --target-id aarch64-linux-musl) || exit $?
+eval "$resolved_environment"
 
 [[ "$CC" == "$aarch64_musl_root/bin/aarch64-linux-gcc" ]]
 [[ "$TARGET_HOST_PREFIX" == "aarch64-linux" ]]
 [[ "$AR" == "$aarch64_musl_root/bin/aarch64-linux-ar" ]]
 [[ "$READELF" == "$aarch64_musl_root/bin/aarch64-linux-readelf" ]]
 
-eval "$(PATH="/usr/bin:/bin" \
+resolved_environment=$(PATH="/usr/bin:/bin" \
   CPKT_TOOLCHAIN_CACHE="$toolchain_cache" \
   "$repo_root/scripts/discover_target_tools.sh" \
     --build-dir "$build_dir" \
-    --target-id armhf-linux-musl)"
+    --target-id armhf-linux-musl) || exit $?
+eval "$resolved_environment"
 
 [[ "$CC" == "$armhf_musl_root/bin/arm-linux-gcc" ]]
 [[ "$TARGET_HOST_PREFIX" == "arm-linux" ]]

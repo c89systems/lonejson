@@ -18,12 +18,17 @@ static_files=(
   lonejson.rockspec.in
   scripts/build_lua_rock.sh
   scripts/cpkt-toolchains.sh
-  scripts/cpkt-archive-cache.sh
   scripts/cpkt-native-apple.sh
+  scripts/require_cache_path.sh
+  tools/lifecycle/scripts/require-host-bash.sh
+  tools/lifecycle/scripts/cpkt-archive-cache.sh
+  tools/lifecycle/scripts/cpkt-toolchains.sh
+  tools/lifecycle/scripts/cpkt-aflpp.sh
+  tools/lifecycle/scripts/cpkt-afl-runtime.sh
   scripts/deps.sh
-  cmake/fetch_c_pkt_systems.cmake
+  cmake/fetch_cpkt.cmake
   cmake/CpktDependencyCache.cmake
-  cmake/c_pkt_systems_metadata.cmake
+  cmake/cpkt_metadata.cmake
   cmake/lonejson_lua.exports
   cmake/lonejson.exports
   scripts/check_library_exports.sh
@@ -150,7 +155,7 @@ for path in "${files[@]}"; do
     exit 1
   fi
   mkdir -p "$stage_dir/$(dirname "$path")"
-  cp "$repo_root/$path" "$stage_dir/$path"
+  cp -p "$repo_root/$path" "$stage_dir/$path"
 done
 
 missing=0

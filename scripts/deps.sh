@@ -10,6 +10,7 @@ case "$target_id" in
     "$repo_root/scripts/cpkt-toolchains.sh" ensure "$target_id" >/dev/null
     ;;
   arm64-apple-darwin)
+    "$repo_root/scripts/cpkt-toolchains.sh" ensure "$target_id" >/dev/null
     ;;
   *)
     printf 'usage: %s <lifecycle-target-id>\n' "$0" >&2
@@ -19,5 +20,5 @@ esac
 
 exec cmake \
   -D "LONEJSON_SOURCE_DIR=$repo_root" \
-  -D "LONEJSON_C_PKT_SYSTEMS_TARGET_ID=$target_id" \
-  -P "$repo_root/cmake/fetch_c_pkt_systems.cmake"
+  -D "LONEJSON_CPKT_TARGET_ID=$target_id" \
+  -P "$repo_root/cmake/fetch_cpkt.cmake"

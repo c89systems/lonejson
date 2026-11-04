@@ -105,7 +105,7 @@ target_host_prefix() {
 case "$target_id" in
   *linux*)
     description=$("$repo_root/scripts/cpkt-toolchains.sh" discover "$target_id")
-    [[ "$description" == *$'status=ready'* ]] || {
+    grep -Fx 'status=ready' <<<"$description" >/dev/null || {
       printf 'selected toolchain unavailable for %s; run scripts/cpkt-toolchains.sh ensure %s\n' "$target_id" "$target_id" >&2
       exit 1
     }

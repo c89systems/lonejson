@@ -16,21 +16,16 @@ if [[ "$action" != logs && $# != 0 ]]; then
   exit 2
 fi
 
-mkdir -p "$repo_root/build"
-exec 9>"$repo_root/build/devenv.lock"
-flock -x -w 30 9 || { printf 'timed out waiting for the devenv lifecycle lock\n' >&2; exit 1; }
+"$repo_root/scripts/require_build_workspace.sh" "$generated"
 if [[ "$action" == render ]]; then
   # Never change the teardown manifest beneath a live pod.
   if [[ -e "$manifest" ]]; then
     printf 'manifest already exists; run make dev-reset before rendering again\n' >&2
     exit 1
   fi
-  exec python3 "$repo_root/scripts/render_devenv.py"
+  exec cmake -P "$repo_root/scripts/render_devenv.cmake"
 fi
 command -v podman >/dev/null || { printf 'rootless Podman is required\n' >&2; exit 1; }
-# Podman launches background monitors and networking helpers. They must not
-# inherit the lifecycle lock after this command returns.
-podman() { command podman "$@" 9>&-; }
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == true ]] || {
   printf 'rootless Podman is required; run as the ordinary host user\n' >&2; exit 1;
 }
@@ -76,16 +71,16 @@ case "$action" in
     down
     rm -rf -- "$generated"
     ;;
-  ps) flock -u 9; podman pod ps --filter "name=^${pod_name}$" ;;
-  logs) flock -u 9; podman pod logs "$@" "$pod_name" ;;
+  ps) podman pod ps --filter "name=^${pod_name}$" ;;
+  logs) podman pod logs "$@" "$pod_name" ;;
   up)
     command -v curl >/dev/null || { printf 'dev-up requires curl\n' >&2; exit 1; }
     # Validate all inputs before touching an existing pod or teardown manifest.
-    python3 "$repo_root/scripts/render_devenv.py" --check
+    cmake -D CHECK_ONLY=ON -P "$repo_root/scripts/render_devenv.cmake"
     if [[ -e "$manifest" ]]; then
       down
     fi
-    python3 "$repo_root/scripts/render_devenv.py" >/dev/null
+    cmake -P "$repo_root/scripts/render_devenv.cmake" >/dev/null
     trap 'status=$?; if (( status != 0 )); then diagnose; if [[ "${LONEJSON_E2E_KEEP_DEVSERVICES:-0}" != 1 ]]; then down || true; fi; fi; exit "$status"' EXIT
     umask 077
     for service in oauth2 oauth2-tls api-fixture sink nginx; do

@@ -13,10 +13,12 @@ fi
 
 repo_root="$1"
 source_tarball="$2"
-smoke_root="$repo_root/build/release-source-smoke"
+
 run_root=""
 
-repo_root="$(CDPATH= cd -- "$repo_root" && pwd)"
+repo_root="$(CDPATH= cd -- "$repo_root" && pwd -P)"
+smoke_root="$repo_root/build/release-source-smoke"
+"$repo_root/scripts/require_build_workspace.sh" "$smoke_root"
 
 if [ ! -f "$source_tarball" ]; then
     printf 'test_release_from_source.sh: source tarball not found: %s\n' \
@@ -50,7 +52,9 @@ if [ -z "$src_dir" ] || [ ! -d "$src_dir" ]; then
 fi
 
 printf '%s\n' 'test_release_from_source.sh: running host C and Lua tests from extracted source'
-make -C "$src_dir" test-host
+make -C "$src_dir" build-host
+ctest --no-tests=error --test-dir "$src_dir/build/host" --output-on-failure -j 1 -LE host-policy
+make -C "$src_dir" lua-test
 
 printf '%s\n' 'test_release_from_source.sh: building Lua release artifacts from extracted source'
 make -C "$src_dir" release-lua-artifacts

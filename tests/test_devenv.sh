@@ -8,11 +8,10 @@ trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/bin"
 for checkout in first second; do
   mkdir -p "$tmp_dir/$checkout/scripts"
-  cp "$repo_root/scripts/devenv.sh" "$repo_root/scripts/render_devenv.py" "$tmp_dir/$checkout/scripts/"
+  cp "$repo_root/scripts/devenv.sh" "$repo_root/scripts/render_devenv.cmake" "$repo_root/scripts/require_build_workspace.sh" "$tmp_dir/$checkout/scripts/"
   cp "$repo_root/devenv.yaml.in" "$tmp_dir/$checkout/"
 done
 export PODMAN_TEST_LOG="$tmp_dir/events"
-export PODMAN_TEST_CHILD="$tmp_dir/child"
 cat >"$tmp_dir/bin/podman" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -26,10 +25,6 @@ fi
 printf '%s\n' "$*" >>"$PODMAN_TEST_LOG"
 if [[ "$1 $2" == 'kube play' ]]; then
   [[ "${PODMAN_TEST_PLAY_FAIL:-0}" != 1 ]] || exit 43
-  # Simulate Podman's background networking helper. A lifecycle lock inherited
-  # by this helper would prevent the following down/reset from completing.
-  sleep 30 >/dev/null 2>&1 &
-  printf '%s\n' "$!" >"$PODMAN_TEST_CHILD"
 fi
 if [[ "$1 $2" == 'kube down' && "${PODMAN_TEST_DOWN_FAIL:-0}" == 1 ]]; then
   exit 42
@@ -92,7 +87,7 @@ if LONEJSON_OIDC_E2E_PORT=8443 "$first/scripts/devenv.sh" render >"$tmp_dir/coll
 fi
 LONEJSON_OIDC_E2E_PORT=24000 "$first/scripts/devenv.sh" render >/dev/null
 grep -F 'hostPort: 24000' "$first_manifest" >/dev/null
-# Startup probes use bounded HTTP requests and release their lock afterward.
+# Startup probes use bounded HTTP requests and propagate failures.
 cat >"$first/scripts/ensure_test_certs.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -106,7 +101,7 @@ cat >"$tmp_dir/bin/curl" <<'SH'
 exit 0
 SH
 chmod +x "$first/scripts/ensure_test_certs.sh" "$first/scripts/ensure_large_fixtures.sh" "$tmp_dir/bin/curl"
-trap 'if [[ -s "$PODMAN_TEST_CHILD" ]]; then kill "$(cat "$PODMAN_TEST_CHILD")" 2>/dev/null || true; fi; rm -rf "$tmp_dir"' EXIT
+trap 'rm -rf "$tmp_dir"' EXIT
 LUA=/bin/true "$first/scripts/devenv.sh" up >"$tmp_dir/startup"
 timeout 5 "$first/scripts/devenv.sh" down
 grep -F 'kube play --network pasta' "$PODMAN_TEST_LOG" >/dev/null
@@ -127,19 +122,10 @@ done
 # Validate path escaping without third-party YAML dependencies.
 odd="$tmp_dir/checkout with \"quotes\""
 mkdir -p "$odd/scripts"
-cp "$first/scripts/render_devenv.py" "$odd/scripts/"
+cp "$first/scripts/render_devenv.cmake" "$first/scripts/require_build_workspace.sh" "$odd/scripts/"
 cp "$repo_root/devenv.yaml.in" "$odd/"
-python3 "$odd/scripts/render_devenv.py" >/dev/null
-python3 - "$odd" <<'PY'
-import json
-from pathlib import Path
-import re
-import sys
-root = Path(sys.argv[1])
-text = (root / "build/devenv/devenv.yaml").read_text()
-paths = re.findall(r'hostPath: \{path: ("(?:[^"\\]|\\.)*")', text)
-assert len(paths) == 5
-assert json.loads(paths[0]) == str(root / "devenv")
-assert all(json.loads(value).startswith(str(root)) for value in paths)
-PY
+cmake -P "$odd/scripts/render_devenv.cmake" >/dev/null
+escaped=${odd//\"/\\\"}
+grep -F "hostPath: {path: \"$escaped/devenv\"" "$odd/build/devenv/devenv.yaml" >/dev/null
+[[ $(grep -c 'hostPath: {path:' "$odd/build/devenv/devenv.yaml") == 5 ]]
 printf '%s\n' 'Podman renderer, isolation, rootless policy, ports, and reset tests passed.'

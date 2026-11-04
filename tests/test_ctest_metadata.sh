@@ -1,42 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-workspace_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
-mkdir -p "$workspace_root/build"
-
-# Rationale: registered tests need labels/timeouts so local gates can select
-# meaningful subsets and long-running failures remain bounded.
-
-build_dir=$1
-
-if ! command -v python3 >/dev/null 2>&1; then
-  printf 'SKIP: python3 unavailable for CTest metadata validation\n'
-  exit 0
-fi
-
-json_path="$(mktemp "$workspace_root/build/test_ctest_metadata.XXXXXX")"
-trap 'rm -f "$json_path"' EXIT
-
-ctest --test-dir "$build_dir" --show-only=json-v1 >"$json_path"
-python3 - "$json_path" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as handle:
-    data = json.load(handle)
-
-missing = []
-for test in data.get("tests", []):
-    name = test.get("name", "<unnamed>")
-    properties = {prop.get("name"): prop.get("value") for prop in test.get("properties", [])}
-    if "TIMEOUT" not in properties:
-        missing.append(f"{name}: missing TIMEOUT")
-    labels = properties.get("LABELS")
-    if not labels:
-        missing.append(f"{name}: missing LABELS")
-
-if missing:
-    for line in missing:
-        print(line, file=sys.stderr)
-    sys.exit(1)
-PY
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+cmake "-DBUILD_DIR=${1:?build directory required}" -DEXPECT_RUNTIME_TESTS=ON \
+  -P "$repo_root/tests/check_ctest_metadata.cmake"

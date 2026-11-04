@@ -12,10 +12,10 @@ if [[ -z "$preset" ]]; then
 fi
 shift
 if [[ "${1:-}" == --exclude && $# -eq 2 ]]; then
-  exec ctest --preset "$preset" --output-on-failure -E "$2"
+  exec ctest --no-tests=error --preset "$preset" --output-on-failure -E "$2"
 fi
 if [[ $# -ne 0 ]]; then
   printf 'usage: %s PRESET [--exclude REGEX]\n' "$0" >&2
   exit 2
 fi
-exec ctest --preset "$preset" --output-on-failure
+exec ctest --no-tests=error --preset "$preset" --output-on-failure

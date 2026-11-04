@@ -14,8 +14,8 @@ cmake_generator=$3
 lua_exec="$(command -v lua || true)"
 luarocks_exec="$(command -v luarocks || true)"
 if [ -z "$lua_exec" ] || [ -z "$luarocks_exec" ]; then
-  printf 'skipping Lua native test target filter: lua or luarocks not found\n'
-  exit 0
+  printf 'missing required lua or luarocks for native test target filter\n'
+  exit 1
 fi
 
 tmp_dir="$(mktemp -d "$workspace_root/build/test_lua_native_test_target_filter.XXXXXX")"
@@ -30,13 +30,14 @@ configure_target() {
     -D "LONEJSON_TARGET_LIBC=$libc" \
     -D "LONEJSON_LUA_EXECUTABLE=$lua_exec" \
     -D "LONEJSON_LUAROCKS_EXECUTABLE=$luarocks_exec" \
+    -D "LONEJSON_CPKT_ROOT=${3:-}" \
     -D LONEJSON_BUILD_TESTS=ON >/dev/null
 }
 
 list_tests() {
   local build_dir=$1
 
-  ctest --test-dir "$build_dir" -N
+  ctest --test-dir "$build_dir" --show-only=json-v1
 }
 
 assert_has_native_lua_tests() {
@@ -64,9 +65,14 @@ assert_lacks_native_lua_tests() {
   fi
 }
 
-configure_target "$tmp_dir/gnu" gnu
+bundle_root=$("$repo_root/scripts/detect_cpkt_bundle.sh")
+configure_target "$tmp_dir/gnu" gnu "$bundle_root"
 gnu_tests="$(list_tests "$tmp_dir/gnu")"
 assert_has_native_lua_tests "$gnu_tests"
+
+configure_target "$tmp_dir/core" gnu
+core_tests="$(list_tests "$tmp_dir/core")"
+assert_lacks_native_lua_tests "$core_tests"
 
 configure_target "$tmp_dir/musl" musl
 musl_tests="$(list_tests "$tmp_dir/musl")"

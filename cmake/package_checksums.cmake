@@ -1,39 +1,59 @@
+cmake_minimum_required(VERSION 3.21)
+include("${LONEJSON_ROOT}/cmake/release_artifacts.cmake")
 include("${LONEJSON_ROOT}/cmake/lonejson_dist_dir.cmake")
-lonejson_prepare_dist_dir()
-set(dist_dir "${LONEJSON_DIST_DIR}")
-set(checksums_name "lonejson-${LONEJSON_VERSION}-CHECKSUMS")
-set(checksums_path "${dist_dir}/${checksums_name}")
-
-file(GLOB release_entries RELATIVE "${dist_dir}"
-  "${dist_dir}/lonejson-${LONEJSON_VERSION}.tar.gz"
-  "${dist_dir}/lonejson-${LONEJSON_VERSION}.h.gz"
-  "${dist_dir}/lonejson-lua-${LONEJSON_VERSION}.tar.gz"
-  "${dist_dir}/lonejson-${LONEJSON_VERSION}-*.rockspec"
-  "${dist_dir}/lonejson-${LONEJSON_VERSION}-*.src.rock"
-  "${dist_dir}/liblonejson-${LONEJSON_VERSION}-*.tar.gz"
-  "${dist_dir}/liblonejson-${LONEJSON_VERSION}-*-smoke-test.zip"
-)
-
-set(checksum_inputs "")
-foreach(entry IN LISTS release_entries)
-  if(NOT entry STREQUAL "${checksums_name}")
-    list(APPEND checksum_inputs "${entry}")
+include("${LONEJSON_ROOT}/cmake/lonejson_build_workspace.cmake")
+if(VERIFY_ONLY)
+  if(NOT IS_DIRECTORY "${LONEJSON_DIST_DIR}")
+    message(FATAL_ERROR "missing release artifact directory: ${LONEJSON_DIST_DIR}")
   endif()
-endforeach()
-
-list(LENGTH checksum_inputs checksum_input_count)
-if(checksum_input_count EQUAL 0)
-  message(FATAL_ERROR "no release artifacts found in ${dist_dir} for version ${LONEJSON_VERSION}")
+else()
+  lonejson_prepare_dist_dir()
 endif()
-
-list(SORT checksum_inputs)
-
-execute_process(
-  COMMAND sha256sum ${checksum_inputs}
-  WORKING_DIRECTORY "${dist_dir}"
-  OUTPUT_FILE "${checksums_path}"
-  RESULT_VARIABLE checksum_result
-)
-if(NOT checksum_result EQUAL 0)
-  message(FATAL_ERROR "failed to create ${checksums_name}")
+set(workspace "${LONEJSON_ROOT}/build/packaging/checksums")
+lonejson_require_build_workspace("${workspace}")
+set(manifest "${LONEJSON_DIST_DIR}/lonejson-${LONEJSON_VERSION}-CHECKSUMS")
+if(LONEJSON_CHECKSUM_SCOPE STREQUAL "binary")
+  set(manifest "${workspace}/lonejson-${LONEJSON_VERSION}-binary-CHECKSUMS")
+endif()
+if(DEFINED LONEJSON_CHECKSUM_MANIFEST)
+  if(NOT VERIFY_ONLY)
+    message(FATAL_ERROR "LONEJSON_CHECKSUM_MANIFEST is only a verification input")
+  endif()
+  set(manifest "${LONEJSON_CHECKSUM_MANIFEST}")
+endif()
+if(VERIFY_ONLY)
+  if(IS_SYMLINK "${manifest}" OR NOT EXISTS "${manifest}" OR IS_DIRECTORY "${manifest}")
+    message(FATAL_ERROR "missing or unsafe release checksum manifest: ${manifest}")
+  endif()
+  file(STRINGS "${manifest}" lines)
+  set(listed "")
+  foreach(line IN LISTS lines)
+    if(NOT line MATCHES "^[0-9a-f]+  ([A-Za-z0-9_.-]+)$")
+      message(FATAL_ERROR "malformed release checksum entry: ${line}")
+    endif()
+    list(APPEND listed "${CMAKE_MATCH_1}")
+  endforeach()
+  list(SORT listed)
+  if(NOT listed STREQUAL lonejson_release_artifacts)
+    message(FATAL_ERROR "incomplete or unexpected release checksum inventory in ${manifest}")
+  endif()
+endif()
+set(content "")
+foreach(artifact IN LISTS lonejson_release_artifacts)
+  if(NOT EXISTS "${LONEJSON_DIST_DIR}/${artifact}" OR
+      IS_DIRECTORY "${LONEJSON_DIST_DIR}/${artifact}" OR IS_SYMLINK "${LONEJSON_DIST_DIR}/${artifact}")
+    message(FATAL_ERROR "missing or unsafe required release artifact: ${artifact}")
+  endif()
+  file(SHA256 "${LONEJSON_DIST_DIR}/${artifact}" digest)
+  string(APPEND content "${digest}  ${artifact}\n")
+endforeach()
+if(VERIFY_ONLY)
+  file(READ "${manifest}" actual)
+  if(NOT actual STREQUAL content)
+    message(FATAL_ERROR "release checksums differ from shipped bytes: ${manifest}")
+  endif()
+else()
+  file(MAKE_DIRECTORY "${workspace}")
+  file(WRITE "${workspace}/CHECKSUMS.tmp" "${content}")
+  lonejson_publish_artifact("${workspace}/CHECKSUMS.tmp" "${manifest}")
 endif()

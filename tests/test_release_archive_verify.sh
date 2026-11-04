@@ -465,15 +465,10 @@ EOF
 # This metadata fixture implements the same export boundary as the real SDK.
 # Supplement its exercised API stubs with inert definitions for the other
 # approved symbols, then verify every extracted archive against the real list.
-python3 - "$repo_root/cmake/lonejson.exports" "$tmp_dir/lonejson_stub.c" <<'PY_STUB'
-import re, sys
-from pathlib import Path
-source = Path(sys.argv[2])
-text = source.read_text()
-defined = set(re.findall(r'\b(lonejson_\w+)\s*\([^;{}]*\)\s*\{', text))
-text += ''.join(f'void {name}(void) {{}}\n' for name in Path(sys.argv[1]).read_text().splitlines() if name not in defined)
-source.write_text(text)
-PY_STUB
+awk 'NR == FNR { source = source " " $0; next }
+  source !~ ($0 "[[:space:]]*\\([^;{}]*\\)[[:space:]]*\\{") { print "void " $0 "(void) {}" }' \
+  "$tmp_dir/lonejson_stub.c" "$repo_root/cmake/lonejson.exports" >"$tmp_dir/extra-stubs.c"
+cat "$tmp_dir/extra-stubs.c" >>"$tmp_dir/lonejson_stub.c"
 
 "$CC" -shared -fPIC -I"$package_root/include" "$tmp_dir/lonejson_stub.c" \
   -o "$package_root/lib/liblonejson.so"
@@ -584,12 +579,12 @@ cat >"$package_root/share/lonejson/dependencies.json" <<'EOF'
   "dependencies": [
     {
       "target_id": "x86_64-linux-gnu",
-      "source_url": "https://github.com/sa6mwa/c.pkt.systems/releases/download/v0.10.0/c.pkt.systems-0.10.0-x86_64-linux-gnu.tar.gz",
-      "sha256": "fb64caa3cad66e01669705412cd88cb4267025ca0a083fa936fe25786011391d",
-      "archive_name": "c.pkt.systems-0.10.0-x86_64-linux-gnu.tar.gz",
+      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.6.1/cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
+      "sha256": "99625b7889f78b6e467d38e7dbec08d9d0ed6f599ff4571244060ce67c6ca62f",
+      "archive_name": "cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
       "bundled": false,
-      "name": "c.pkt.systems",
-      "version": "0.10.0",
+      "name": "cpkt",
+      "version": "0.6.1",
       "source_system": "GitHub release",
       "license": "MIT",
       "external": false,
@@ -601,26 +596,26 @@ cat >"$package_root/share/lonejson/dependencies.json" <<'EOF'
     },
     {
       "target_id": "x86_64-linux-gnu",
-      "source_url": "https://github.com/sa6mwa/c.pkt.systems/releases/download/v0.10.0/c.pkt.systems-0.10.0-x86_64-linux-gnu.tar.gz",
-      "sha256": "fb64caa3cad66e01669705412cd88cb4267025ca0a083fa936fe25786011391d",
-      "archive_name": "c.pkt.systems-0.10.0-x86_64-linux-gnu.tar.gz",
+      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.6.1/cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
+      "sha256": "99625b7889f78b6e467d38e7dbec08d9d0ed6f599ff4571244060ce67c6ca62f",
+      "archive_name": "cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
       "bundled": false,
       "name": "curl",
       "version": "8.22.0",
-      "source_system": "c.pkt.systems",
+      "source_system": "cpkt",
       "license": "curl",
       "external": true,
       "role": "optional-facade-consumer-requirement"
     },
     {
       "target_id": "x86_64-linux-gnu",
-      "source_url": "https://github.com/sa6mwa/c.pkt.systems/releases/download/v0.10.0/c.pkt.systems-0.10.0-x86_64-linux-gnu.tar.gz",
-      "sha256": "fb64caa3cad66e01669705412cd88cb4267025ca0a083fa936fe25786011391d",
-      "archive_name": "c.pkt.systems-0.10.0-x86_64-linux-gnu.tar.gz",
+      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.6.1/cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
+      "sha256": "99625b7889f78b6e467d38e7dbec08d9d0ed6f599ff4571244060ce67c6ca62f",
+      "archive_name": "cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
       "bundled": false,
       "name": "openssl",
-      "version": "3.6.4",
-      "source_system": "c.pkt.systems",
+      "version": "3.6.5",
+      "source_system": "cpkt",
       "license": "Apache-2.0",
       "external": true,
       "role": "optional-facade-consumer-requirement"
@@ -633,7 +628,7 @@ EOF
 for defect in sha256 license bundled external version malformed; do
   cp "$package_root/share/lonejson/dependencies.json" "$tmp_dir/manifest-$defect.json"
   case "$defect" in
-    sha256) perl -pi -e 's/fb64caa3/00000000/g' "$tmp_dir/manifest-$defect.json" ;;
+    sha256) perl -pi -e 's/99625b78/00000000/g' "$tmp_dir/manifest-$defect.json" ;;
     license) perl -pi -e 's/Apache-2.0/MIT/' "$tmp_dir/manifest-$defect.json" ;;
     bundled) perl -pi -e 's/"bundled": false/"bundled": true/g' "$tmp_dir/manifest-$defect.json" ;;
     external) perl -pi -e 's/"external": true/"external": false/g' "$tmp_dir/manifest-$defect.json" ;;
@@ -657,8 +652,32 @@ CMAKE_READELF:FILEPATH=$CPKT_TOOLCHAIN_READELF
 CMAKE_SYSROOT:PATH=$CPKT_SYSROOT
 LONEJSON_BOOTLIN_LIBC:STRING=gnu
 LONEJSON_BOOTLIN_TOOLCHAIN_ROOT:PATH=$CPKT_TOOLCHAIN_ROOT
-LONEJSON_C_PKT_SYSTEMS_ROOT:PATH=$dependency_root
+LONEJSON_CPKT_ROOT:PATH=$dependency_root
 EOF
+
+# Exercise the SDK producer with this already-compiled fixture. Stripping must
+# normalize the static archive's internal headers as well as the outer tar.
+mkdir -p "$tmp_dir/scripts" "$tmp_dir/cmake" "$tmp_dir/tools/lifecycle/scripts"
+cp "$repo_root/scripts/"{archive_release_tree,require_build_workspace,discover_target_tools,cpkt-toolchains,cpkt-native-apple,require_cache_path}.sh "$tmp_dir/scripts/"
+cp "$repo_root/tools/lifecycle/scripts/"*.sh "$tmp_dir/tools/lifecycle/scripts/"
+cp "$repo_root/cmake/"{lonejson_build_workspace,lonejson_target_tools,lonejson_dist_dir,cpkt_metadata}.cmake "$tmp_dir/cmake/"
+cp "$repo_root/LICENSE" "$repo_root/README.md" "$tmp_dir/"
+cat >"$build_root/x86_64-linux-gnu-release/cmake_install.cmake" <<EOF
+file(COPY "$package_root/" DESTINATION "\${CMAKE_INSTALL_PREFIX}")
+EOF
+for mask in 022 077; do
+  (umask "$mask"; cmake -D "LONEJSON_ROOT=$tmp_dir" \
+    -D "LONEJSON_BINARY_DIR=$build_root/x86_64-linux-gnu-release" \
+    -D LONEJSON_VERSION=9.9.9 -D LONEJSON_TARGET_ID=x86_64-linux-gnu \
+    -D LONEJSON_SHARED_LIB_NAME=liblonejson.so -D LONEJSON_STATIC_LIB_NAME=liblonejson.a \
+    -D LONEJSON_BUILD_WITH_CURL=ON -D LONEJSON_BUILD_WITH_OPENSSL=ON \
+    -D LONEJSON_BUILD_WITH_JWT=ON -D LONEJSON_BUILD_WITH_OIDC=ON \
+    -P "$repo_root/cmake/package_archive.cmake")
+  cp "$dist_dir/liblonejson-9.9.9-x86_64-linux-gnu.tar.gz" "$tmp_dir/produced-$mask.tar.gz"
+done
+cmp "$tmp_dir/produced-022.tar.gz" "$tmp_dir/produced-077.tar.gz" || {
+  printf 'SDK producer changed shipped bytes with staging metadata\n' >&2; exit 1;
+}
 
 "$AR" rcs "$dependency_root/lib/libcurl.a"
 "$AR" rcs "$dependency_root/lib/libcrypto.a"
@@ -734,7 +753,7 @@ bootlin_path_root="$bootlin_path_package_dir/liblonejson-9.9.9-x86_64-linux-gnu"
 mkdir -p "$bootlin_path_dist_dir"
 cp -R "$tmp_dir/package" "$bootlin_path_package_dir"
 cat >>"$bootlin_path_root/lib/pkgconfig/lonejson.pc" <<'EOF'
-Libs.private: -Wl,-rpath,/srv/build-cache/c.pkt.systems/toolchains/roots/x86-64--glibc--stable-2026.08-1/sysroot/lib
+Libs.private: -Wl,-rpath,/srv/build-cache/cpkt/toolchains/roots/x86-64--glibc--stable-2026.08-1/sysroot/lib
 EOF
 tar -C "$bootlin_path_package_dir" -czf \
   "$bootlin_path_dist_dir/liblonejson-9.9.9-x86_64-linux-gnu.tar.gz" \

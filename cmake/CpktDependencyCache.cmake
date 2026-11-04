@@ -11,9 +11,9 @@ function(cpkt_resolve_dependency_cache out_var)
     set(_cache "$ENV{CPKT_DEPENDENCY_CACHE}")
   elseif(DEFINED ENV{XDG_CACHE_HOME} AND
          NOT "$ENV{XDG_CACHE_HOME}" STREQUAL "")
-    set(_cache "$ENV{XDG_CACHE_HOME}/c.pkt.systems/deps")
+    set(_cache "$ENV{XDG_CACHE_HOME}/cpkt/deps")
   elseif(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
-    set(_cache "$ENV{HOME}/.cache/c.pkt.systems/deps")
+    set(_cache "$ENV{HOME}/.cache/cpkt/deps")
   else()
     message(FATAL_ERROR
       "CPKT_DEPENDENCY_CACHE, XDG_CACHE_HOME, or HOME is required to locate "
@@ -21,8 +21,13 @@ function(cpkt_resolve_dependency_cache out_var)
   endif()
 
   get_filename_component(_cache "${_cache}" ABSOLUTE)
+  execute_process(COMMAND "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../scripts/require_cache_path.sh"
+    "${_cache}" RESULT_VARIABLE _cache_status ERROR_VARIABLE _cache_error)
+  if(NOT _cache_status EQUAL 0)
+    message(FATAL_ERROR "${_cache_error}")
+  endif()
   set(CPKT_DEPENDENCY_CACHE "${_cache}" CACHE PATH
-    "Shared cache for verified c.pkt.systems dependency archives." FORCE)
+    "Shared cache for verified cpkt dependency archives." FORCE)
   set(${out_var} "${_cache}" PARENT_SCOPE)
 endfunction()
 

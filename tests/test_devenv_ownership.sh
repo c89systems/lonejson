@@ -20,8 +20,8 @@ printf '%s\n' 'All five images wrote state and temporary files as the host user.
 fixture=$(mktemp -d "$generated/tmp/yaml-😀.XXXXXX")
 trap 'rm -rf -- "$fixture"' EXIT
 mkdir -p "$fixture/scripts"
-cp "$repo_root/scripts/render_devenv.py" "$fixture/scripts/"
+cp "$repo_root/scripts/render_devenv.cmake" "$repo_root/scripts/require_build_workspace.sh" "$fixture/scripts/"
 cp "$repo_root/devenv.yaml.in" "$fixture/"
-python3 "$fixture/scripts/render_devenv.py" >/dev/null
+cmake -P "$fixture/scripts/render_devenv.cmake" >/dev/null
 podman kube down "$fixture/build/devenv/devenv.yaml"
 printf '%s\n' 'Podman parsed the non-BMP checkout manifest.'

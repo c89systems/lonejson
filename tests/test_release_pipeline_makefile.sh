@@ -8,6 +8,69 @@ repo_root=$1
 makefile="$repo_root/Makefile"
 cmakelists="$repo_root/CMakeLists.txt"
 
+# Execute both standalone aliases with only a source artifact in an isolated
+# parent tree. Heavy build/smoke work is recorded; checksum generation uses the
+# real strict inventory so an accidental request for a full manifest fails.
+mkdir -p "$repo_root/build"
+workspace=$(mktemp -d "$repo_root/build/test-release-graph.XXXXXX")
+trap 'rm -rf "$workspace"' EXIT
+source_root="$workspace/source-only"
+mkdir -p "$source_root/scripts" "$source_root/cmake" "$workspace/source-bin"
+cp "$makefile" "$source_root/Makefile"
+cp "$repo_root/scripts/require_build_workspace.sh" "$source_root/scripts/"
+cp "$repo_root/cmake/"{package_checksums,release_artifacts,lonejson_dist_dir,lonejson_build_workspace}.cmake "$source_root/cmake/"
+printf '#!/usr/bin/env bash\nprintf "1.2.3\\n"\n' >"$source_root/scripts/release_version.sh"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$source_root/scripts/osxcross_available.sh"
+printf '#!/usr/bin/env bash\nprintf "x86_64-linux-gnu\\n"\n' >"$source_root/scripts/detect_native_target.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$source_root/scripts/cpkt-toolchains.sh"
+cat >"$source_root/scripts/test_release_from_source.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == "$SOURCE_SMOKE_ROOT" && -f "$2" ]]
+printf 'source smoke\n' >>"$SOURCE_SMOKE_EVENTS"
+[[ ${SOURCE_SMOKE_FAIL:-0} == 0 ]]
+SH
+cat >"$workspace/source-bin/cmake" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'cmake %s\n' "$*" >>"$SOURCE_SMOKE_EVENTS"
+case "$1" in
+  --preset) exit 0 ;;
+  --build)
+    case "$3" in
+      package-source)
+        mkdir -p "$SOURCE_SMOKE_ROOT/dist"
+        printf source >"$SOURCE_SMOKE_ROOT/dist/lonejson-1.2.3.tar.gz" ;;
+      package-checksums)
+        exec "$SOURCE_SMOKE_CMAKE" -D "LONEJSON_ROOT=$SOURCE_SMOKE_ROOT" \
+          -D LONEJSON_VERSION=1.2.3 -D "LONEJSON_RELEASE_TARGETS=$LONEJSON_RELEASE_TARGETS" \
+          -P "$SOURCE_SMOKE_ROOT/cmake/package_checksums.cmake" ;;
+      *) exit 91 ;;
+    esac ;;
+  *) exit 92 ;;
+esac
+SH
+chmod +x "$source_root/scripts/"*.sh "$workspace/source-bin/cmake"
+export SOURCE_SMOKE_ROOT="$source_root" SOURCE_SMOKE_EVENTS="$workspace/source-events"
+export SOURCE_SMOKE_CMAKE="$(command -v cmake)"
+for target in package-source-smoke release-source-smoke; do
+  : >"$SOURCE_SMOKE_EVENTS"
+  if ! PATH="$workspace/source-bin:$PATH" make -s -C "$source_root" "$target" LUA=lua >"$workspace/source-output" 2>&1; then
+    cat "$workspace/source-output" >&2; exit 1
+  fi
+  [[ $(grep -cx 'source smoke' "$SOURCE_SMOKE_EVENTS") == 1 ]]
+  ! grep -F 'package-checksums' "$SOURCE_SMOKE_EVENTS"
+  [[ -f "$source_root/dist/lonejson-1.2.3.tar.gz" ]]
+  [[ ! -e "$source_root/dist/lonejson-1.2.3-CHECKSUMS" ]]
+done
+: >"$SOURCE_SMOKE_EVENTS"
+if PATH="$workspace/source-bin:$PATH" SOURCE_SMOKE_FAIL=1 \
+    make -s -C "$source_root" package-source-smoke LUA=lua >"$workspace/source-failed" 2>&1; then
+  printf 'standalone source smoke ignored a reconstruction failure\n' >&2; exit 1
+fi
+grep -Fx 'source smoke' "$SOURCE_SMOKE_EVENTS" >/dev/null
+! grep -F 'package-checksums' "$SOURCE_SMOKE_EVENTS"
+
 require_text() {
   local text=$1
   if ! grep -F -- "$text" "$makefile" >/dev/null; then
@@ -29,15 +92,16 @@ require_text 'prerelease: release-pipeline'
 require_text 'prerelease-hardening: prerelease'
 reject_text '+$(TIME_STEP) hardening/bench-check $(MAKE) bench-check'
 require_text 'release-pipeline:'
-require_text '+$(TIME_STEP) prerelease/format $(MAKE) format'
+require_text '+$(TIME_STEP) prerelease/format $(MAKE) format-check'
 require_text '+$(TIME_STEP) prerelease/test $(MAKE) test'
 reject_text 'LONEJSON_TEST_ALL_HOST_CURL'
 require_text '+$(TIME_STEP) prerelease/release-matrix $(MAKE) release-matrix'
 require_text '+$(TIME_STEP) release/source-smoke $(MAKE) package-source-smoke'
+require_text '+$(TIME_STEP) release/package-checksums $(MAKE) package-checksums'
 require_text '+$(TIME_STEP) release/package-verify $(MAKE) package-verify'
 require_text 'verify-release-privacy: package-verify'
 require_text 'lifecycle-version-contract:'
-require_text 'bash ./tests/test_release_version_override.sh "$(CURDIR)"'
+require_text 'bash ./scripts/check_release_identity.sh'
 require_text 'release:'
 require_text '+$(TIME_STEP) release/version-contract $(MAKE) lifecycle-version-contract'
 require_text '+$(TIME_STEP) release/clean $(MAKE) clean'
@@ -59,10 +123,11 @@ line_number() {
   grep -nF -- "$text" "$makefile" | head -n 1 | cut -d: -f1
 }
 
-format_line=$(line_number '+$(TIME_STEP) prerelease/format $(MAKE) format')
+format_line=$(line_number '+$(TIME_STEP) prerelease/format $(MAKE) format-check')
 test_line=$(line_number '+$(TIME_STEP) prerelease/test $(MAKE) test')
 matrix_line=$(line_number '+$(TIME_STEP) prerelease/release-matrix $(MAKE) release-matrix')
 source_smoke_line=$(line_number '+$(TIME_STEP) release/source-smoke $(MAKE) package-source-smoke')
+package_checksums_line=$(line_number '+$(TIME_STEP) release/package-checksums $(MAKE) package-checksums')
 package_verify_line=$(line_number '+$(TIME_STEP) release/package-verify $(MAKE) package-verify')
 clean_line=$(line_number '+$(TIME_STEP) release/clean $(MAKE) clean')
 version_contract_line=$(line_number '+$(TIME_STEP) release/version-contract $(MAKE) lifecycle-version-contract')
@@ -73,8 +138,8 @@ if (( format_line >= test_line || test_line >= matrix_line )); then
   exit 1
 fi
 
-if (( version_contract_line >= clean_line || clean_line >= pipeline_line || pipeline_line >= source_smoke_line || source_smoke_line >= package_verify_line )); then
-  printf 'release must run lifecycle-version-contract, then clean, pipeline, source-smoke and package-verify\n' >&2
+if (( version_contract_line >= clean_line || clean_line >= pipeline_line || pipeline_line >= source_smoke_line || source_smoke_line >= package_checksums_line || package_checksums_line >= package_verify_line )); then
+  printf 'release must run lifecycle-version-contract, then clean, pipeline, source-smoke, package-checksums and package-verify\n' >&2
   exit 1
 fi
 
@@ -85,9 +150,6 @@ fi
 
 # Execute the real public targets with recording sub-makes. A failed version
 # contract must prevent clean and every later release command.
-mkdir -p "$repo_root/build"
-workspace=$(mktemp -d "$repo_root/build/test-release-graph.XXXXXX")
-trap 'rm -rf "$workspace"' EXIT
 cat >"$workspace/make" <<'MOCK_MAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$TEST_RELEASE_GRAPH_LOG"
@@ -104,13 +166,13 @@ MOCK_TIME
 chmod +x "$workspace/make" "$workspace/time"
 export TEST_RELEASE_GRAPH_LOG="$workspace/graph"
 export TEST_REAL_MAKE="$(command -v make)" TEST_REPO_ROOT="$repo_root" TEST_TIME_STEP="$workspace/time"
-proof=(format test asan tsan valgrind test-e2e fuzz-smoke bench-check release-matrix)
+proof=(format-check test asan tsan valgrind test-e2e fuzz-smoke bench-check release-matrix)
 make -s -C "$repo_root" MAKE="$workspace/make" TIME_STEP="$workspace/time" prerelease
 printf '%s\n' "${proof[@]}" >"$workspace/expected"
 diff -u "$workspace/expected" "$workspace/graph"
 : >"$workspace/graph"
 make -s -C "$repo_root" MAKE="$workspace/make" TIME_STEP="$workspace/time" release
-printf '%s\n' lifecycle-version-contract clean release-pipeline "${proof[@]}" package-source-smoke package-verify >"$workspace/expected"
+printf '%s\n' lifecycle-version-contract clean release-pipeline "${proof[@]}" package-source-smoke package-checksums package-verify >"$workspace/expected"
 diff -u "$workspace/expected" "$workspace/graph"
 : >"$workspace/graph"
 if TEST_RELEASE_GRAPH_FAIL=lifecycle-version-contract make -s -C "$repo_root" MAKE="$workspace/make" TIME_STEP="$workspace/time" release >"$workspace/failure.log" 2>&1; then
@@ -136,7 +198,7 @@ for index in "${!proof[@]}"; do
   diff -u "$workspace/expected" "$workspace/graph"
 done
 
-release_steps=(lifecycle-version-contract clean release-pipeline "${proof[@]}" package-source-smoke package-verify)
+release_steps=(lifecycle-version-contract clean release-pipeline "${proof[@]}" package-source-smoke package-checksums package-verify)
 for index in "${!release_steps[@]}"; do
   : >"$workspace/graph"
   if TEST_RELEASE_GRAPH_FAIL="${release_steps[index]}" make -s -C "$repo_root" \
@@ -164,7 +226,7 @@ PATH="$workspace/bin:$PATH" make -s -C "$repo_root" MAKE="$workspace/make" final
 cat >"$workspace/expected" <<'EXPECTED'
 format
 cmake --build --preset debug --target lonejson_tests lonejson_map_cache_no_tls_tests lonejson_short_names_tests lonejson_short_names_disabled_tests lonejson_static_link_tests lonejson_shared_link_tests
-ctest --preset debug --output-on-failure -R ^lonejson_(tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|shared_soversion_tests|single_header_version_tests|header_abi_version_tests|single_header_release_version_tests|library_exports_tests)$
+ctest --no-tests=error --preset debug --output-on-failure -R ^lonejson_(tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|shared_soversion_tests|single_header_version_tests|header_abi_version_tests|single_header_release_version_tests|library_exports_tests)$
 lua-test
 format-check
 EXPECTED

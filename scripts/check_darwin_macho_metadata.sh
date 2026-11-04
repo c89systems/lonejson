@@ -25,9 +25,10 @@ if [[ ! -f "$macho_file" ]]; then
   exit 1
 fi
 
-eval "$("$repo_root/scripts/discover_target_tools.sh" \
+resolved_environment=$("$repo_root/scripts/discover_target_tools.sh" \
   --build-dir "$build_dir" \
-  --target-id "$target_id")"
+  --target-id "$target_id") || exit $?
+eval "$resolved_environment"
 
 if [[ -z "${OTOOL:-}" ]]; then
   printf 'missing target otool for %s\n' "$target_id" >&2
@@ -46,7 +47,7 @@ dependency_metadata="$(printf '%s\n' "$load_metadata" | sed '1d')"
 combined_metadata="$dependency_metadata"
 
 case "$combined_metadata" in
-  *libcurl* | *c.pkt.systems* | *".cache/"* | *".deps/"* | *"$repo_root"* | *"/home/"* | *"/build/"* | *"/tmp/"* | *"/var/tmp/"*)
+  *libcurl* | *cpkt* | *".cache/"* | *".deps/"* | *"$repo_root"* | *"/home/"* | *"/build/"* | *"/tmp/"* | *"/var/tmp/"*)
     printf 'forbidden Darwin loader metadata in %s\n' "$context" >&2
     exit 1
     ;;

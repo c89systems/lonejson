@@ -26,9 +26,10 @@ if [[ ! -f "$static_lib" ]]; then
   exit 1
 fi
 
-eval "$("$repo_root/scripts/discover_target_tools.sh" \
+resolved_environment=$("$repo_root/scripts/discover_target_tools.sh" \
   --build-dir "$build_dir" \
-  --target-id "$target_id")"
+  --target-id "$target_id") || exit $?
+eval "$resolved_environment"
 
 if [[ -z "${NM:-}" ]]; then
   printf 'missing target nm for %s\n' "$target_id" >&2

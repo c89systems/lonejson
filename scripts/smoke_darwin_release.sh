@@ -22,9 +22,10 @@ cache_value() {
     sed -n "s/^${var_name}:[^=]*=//p" "${build_dir}/CMakeCache.txt" | sed -n '1p'
 }
 
-eval "$("${repo_root}/scripts/discover_target_tools.sh" \
+resolved_environment=$("${repo_root}/scripts/discover_target_tools.sh" \
     --build-dir "$build_dir" \
-    --target-id arm64-apple-darwin)"
+    --target-id arm64-apple-darwin) || exit $?
+eval "$resolved_environment"
 cc="$CC"
 ld="$LINKER"
 otool="$OTOOL"

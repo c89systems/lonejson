@@ -21,7 +21,7 @@ printf '%s\n' "$output" | grep -F -- '-DLONEJSON_BUILD_WITH_OPENSSL=ON' >/dev/nu
 printf '%s\n' "$output" | grep -F -- '-DLONEJSON_BUILD_WITH_JWT=ON' >/dev/null
 printf '%s\n' "$output" | grep -F -- '-DLONEJSON_BUILD_WITH_OIDC=ON' >/dev/null
 printf '%s\n' "$output" | grep -F -- '-DLONEJSON_TEST_TIMEOUT=600' >/dev/null
-printf '%s\n' "$output" | grep -F -- 'ctest --test-dir' >/dev/null
+printf '%s\n' "$output" | grep -F -- 'ctest --no-tests=error --test-dir' >/dev/null
 
 if printf '%s\n' "$output" | grep -F -- 'scripts/clean.sh' >/dev/null; then
   printf 'cross sanitizer matrix must not clean generated state\n' >&2

@@ -24,30 +24,6 @@ lonejson_require_build_workspace("${build_alias_dir}")
 lonejson_require_build_workspace("${LONEJSON_ROOT}/build/packaging")
 include("${LONEJSON_ROOT}/cmake/lonejson_dist_dir.cmake")
 lonejson_prepare_dist_dir()
-if(NOT DEFINED LONEJSON_LOCK_TIMEOUT_SECONDS OR
-   LONEJSON_LOCK_TIMEOUT_SECONDS STREQUAL "")
-  if(DEFINED ENV{LONEJSON_LOCK_TIMEOUT_SECONDS} AND
-     NOT "$ENV{LONEJSON_LOCK_TIMEOUT_SECONDS}" STREQUAL "")
-    set(LONEJSON_LOCK_TIMEOUT_SECONDS "$ENV{LONEJSON_LOCK_TIMEOUT_SECONDS}")
-  else()
-    set(LONEJSON_LOCK_TIMEOUT_SECONDS "120")
-  endif()
-endif()
-if(NOT LONEJSON_LOCK_TIMEOUT_SECONDS MATCHES "^[1-9][0-9]*$")
-  message(FATAL_ERROR
-    "LONEJSON_LOCK_TIMEOUT_SECONDS must be a positive integer number of seconds")
-endif()
-get_filename_component(lonejson_dist_dir "${LONEJSON_SINGLE_HEADER_DIST_GZ}" DIRECTORY)
-set(lonejson_single_header_lock
-  "${LONEJSON_ROOT}/build/packaging/.lonejson-single-header.lock")
-file(MAKE_DIRECTORY "${LONEJSON_ROOT}/build/packaging")
-file(LOCK "${lonejson_single_header_lock}" GUARD PROCESS
-  TIMEOUT "${LONEJSON_LOCK_TIMEOUT_SECONDS}"
-  RESULT_VARIABLE lonejson_single_header_lock_result)
-if(NOT lonejson_single_header_lock_result EQUAL 0)
-  message(FATAL_ERROR
-    "timed out after ${LONEJSON_LOCK_TIMEOUT_SECONDS}s waiting for standalone-header artifact lock: ${lonejson_single_header_lock}")
-endif()
 function(lonejson_read_normalized out_var path)
   file(READ "${path}" content)
   string(REPLACE "\r\n" "\n" content "${content}")

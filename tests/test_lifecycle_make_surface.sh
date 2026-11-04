@@ -39,18 +39,18 @@ require_text 'cross-test: deps-cross'
 require_text 'test-cross: cross-test'
 require_text './scripts/build.sh $(DEBUG_PRESET) --stage-examples'
 require_text './scripts/test.sh $(DEBUG_PRESET)'
-require_text './scripts/host_test.sh'
+require_text './scripts/test.sh $(HOST_PRESET)'
 require_text './scripts/cross_build.sh $(CROSS_RELEASE_PRESETS)'
-require_text './scripts/cross_test.sh "$(HOST_POLICY_CTEST_EXCLUDE)" $(CROSS_RELEASE_PRESETS)'
+require_text './scripts/cross_test.sh $(CROSS_RELEASE_PRESETS)'
 require_text 'target_id="$$(./scripts/detect_native_target.sh)" && ./scripts/deps.sh "$$target_id"'
 require_text './scripts/detect_native_target.sh'
 require_text './scripts/package.sh'
 require_text './scripts/package-verify.sh'
 require_text 'verify-release-privacy: package-verify'
-require_text './scripts/validate_luarocks.sh'
-require_text './scripts/validate_luarocks.sh "$(RELEASE_ROCK)" "$(LONEJSON_LUA_LIBDIR)" "$(LUA)" "$(LUAROCKS)"'
-require_text './scripts/run_linux_release_matrix.sh'
-require_text './scripts/fuzz.sh'
+require_text './scripts/smoke_lua_src_rock.sh'
+require_text './scripts/smoke_lua_src_rock.sh "$(RELEASE_ROCK)" "$(LONEJSON_LUA_LIBDIR)" "$(LUA)" "$(LUAROCKS)"'
+require_text './scripts/run_release_matrix.sh'
+require_text 'ctest --preset fuzz'
 
 bench_freeze_plan=$(make --no-print-directory -C "$repo_root" -n bench-freeze-baseline)
 printf '%s\n' "$bench_freeze_plan" | grep -F 'lonejson_bench run' >/dev/null
@@ -71,10 +71,6 @@ if [[ $(printf '%s\n' "$lua_bench_freeze_plan" | grep -n -F 'lonejson_lua_bench.
   exit 1
 fi
 
-if grep -F './scripts/run_release_matrix.sh' "$makefile" >/dev/null; then
-  printf 'release-matrix must route through scripts/run_linux_release_matrix.sh\n' >&2
-  exit 1
-fi
 if grep -F './scripts/run_afl_fuzz.sh' "$makefile" >/dev/null; then
   printf 'fuzz must route through scripts/fuzz.sh\n' >&2
   exit 1
@@ -101,8 +97,8 @@ done < <(awk '
 ' "$makefile")
 
 for script in \
-  deps build test host_test cross_build cross_test fuzz package package-verify \
-  run_timed osxcross_available verify_release_privacy validate_luarocks run_linux_release_matrix \
+  deps build test cross_build cross_test fuzz package package-verify \
+  time_step osxcross_available smoke_lua_src_rock run_release_matrix \
   devenv test-e2e; do
   if [[ ! -x "$repo_root/scripts/$script.sh" ]]; then
     printf 'missing executable lifecycle script: scripts/%s.sh\n' "$script" >&2
@@ -110,14 +106,9 @@ for script in \
   fi
 done
 
-grep -F 'exec "$repo_root/scripts/time_step.sh"' "$repo_root/scripts/run_timed.sh" >/dev/null
-grep -F 'exec "$repo_root/scripts/fuzz.sh"' "$repo_root/scripts/run_afl_fuzz.sh" >/dev/null
 grep -F 'verify_release_artifacts.sh' "$repo_root/scripts/package-verify.sh" >/dev/null
 grep -F 'verify_release_archives.sh' "$repo_root/scripts/package-verify.sh" >/dev/null
-grep -F 'verify_release_artifacts.sh' "$repo_root/scripts/verify_release_privacy.sh" >/dev/null
 grep -F 'cpkt-toolchains.sh" discover arm64-apple-darwin' "$repo_root/scripts/osxcross_available.sh" >/dev/null
-grep -F 'exec "${repo_root}/scripts/run_release_matrix.sh"' "$repo_root/scripts/run_linux_release_matrix.sh" >/dev/null
-grep -Fx 'set -euo pipefail' "$repo_root/scripts/run_linux_release_matrix.sh" >/dev/null
 grep -Fx 'set -euo pipefail' "$repo_root/scripts/run_release_matrix.sh" >/dev/null
 grep -Fx 'set -euo pipefail' "$repo_root/scripts/smoke_darwin_release.sh" >/dev/null
 
@@ -141,6 +132,13 @@ if grep -F 'lonejson_lua_target_runner' <<<"$darwin_lua_test" >/dev/null; then
   exit 1
 fi
 printf '%s\n' "$darwin_lua_test" | grep -F 'luarocks' >/dev/null
+if grep -F 'cmake --install' <<<"$darwin_lua_test"; then
+  printf 'Darwin Lua preparation must be owned by the CTest fixture\n' >&2; exit 1
+fi
+darwin_debug_test=$(make --no-print-directory -C "$repo_root" -n LONEJSON_HOST_OS=Darwin test)
+if grep -F 'make lua-test' <<<"$darwin_debug_test"; then
+  printf 'Darwin debug tests repeat the Lua CTest selection\n' >&2; exit 1
+fi
 
 darwin_lua_bench=$(make --no-print-directory -C "$repo_root" -n \
   LONEJSON_HOST_OS=Darwin lua-bench)
@@ -152,43 +150,43 @@ grep -F 'hostIP: 127.0.0.1' "$repo_root/devenv.yaml.in" >/dev/null
 grep -F 'service-readiness' "$repo_root/scripts/devenv.sh" >/dev/null
 grep -F 'Podman state and recent logs follow' "$repo_root/scripts/test-e2e.sh" >/dev/null
 
-# Execute the Darwin recipes with recording tools: each interpreter invocation
-# must receive exactly one script, and failures must propagate out of make.
+# Exercise native Lua argument boundaries and error propagation with recording tools.
 mkdir -p "$repo_root/build"
 lua_recipe_tmp=$(mktemp -d "$repo_root/build/lua-recipe.XXXXXX")
 trap 'rm -rf "$lua_recipe_tmp"' EXIT
-mkdir -p "$lua_recipe_tmp/bin"
-cat >"$lua_recipe_tmp/bin/lua" <<'LUA'
+cat >"$lua_recipe_tmp/lua" <<'LUA'
 #!/bin/bash
 [[ $# == 1 ]] || exit 90
 printf '%s\n' "$1" >>"$LUA_RECIPE_LOG"
 [[ "$1" != "${LUA_RECIPE_FAIL:-}" ]] || exit 91
 LUA
-cat >"$lua_recipe_tmp/bin/luarocks" <<'ROCKS'
+cat >"$lua_recipe_tmp/luarocks" <<'ROCKS'
 #!/bin/bash
 [[ "$1" == path ]]
 ROCKS
-cat >"$lua_recipe_tmp/bin/bash" <<'BASH'
-#!/bin/bash
-case "$1" in
-  tests/test_lua_schema_cache.sh | tests/test_lua_encode_stats.sh)
-    printf '%s\n' "$1" >>"$LUA_RECIPE_LOG" ;;
-  *) exec /bin/bash "$@" ;;
-esac
-BASH
-chmod +x "$lua_recipe_tmp/bin/"*
+chmod +x "$lua_recipe_tmp/lua" "$lua_recipe_tmp/luarocks"
 export LUA_RECIPE_LOG="$lua_recipe_tmp/log"
-run_darwin_recipe() {
-  PATH="$lua_recipe_tmp/bin:$PATH" make --no-print-directory -C "$repo_root" \
-    SHELL=/bin/bash -o lua-rock LONEJSON_HOST_OS=Darwin \
-    LUA="$lua_recipe_tmp/bin/lua" LUAROCKS="$lua_recipe_tmp/bin/luarocks" lua-test
-}
-run_darwin_recipe >"$lua_recipe_tmp/output"
-printf '%s\n' tests/test_lua.lua tests/test_lua_fuzz.lua \
-  tests/test_lua_schema_cache.sh tests/test_lua_encode_stats.sh >"$lua_recipe_tmp/expected"
+"$repo_root/scripts/test_lua_native.sh" "$lua_recipe_tmp/lua" "$lua_recipe_tmp/luarocks" tests/test_lua.lua tests/test_lua_fuzz.lua
+printf '%s\n' tests/test_lua.lua tests/test_lua_fuzz.lua >"$lua_recipe_tmp/expected"
 diff -u "$lua_recipe_tmp/expected" "$LUA_RECIPE_LOG"
+cat >"$lua_recipe_tmp/luarocks-failed" <<'ROCKS'
+#!/bin/bash
+exit 92
+ROCKS
+chmod +x "$lua_recipe_tmp/luarocks-failed"
 : >"$LUA_RECIPE_LOG"
-if LUA_RECIPE_FAIL=tests/test_lua_fuzz.lua run_darwin_recipe >"$lua_recipe_tmp/failure" 2>&1; then
-  printf 'Darwin Lua recipe swallowed a failing test\n' >&2
-  exit 1
+if env -u LUA -u LUAROCKS "$repo_root/scripts/test_lua_native.sh" \
+    "$lua_recipe_tmp/lua" "$lua_recipe_tmp/luarocks-failed" tests/not-reached.lua; then
+  printf 'native Lua driver swallowed a failed prerequisite\n' >&2; exit 1
 fi
+[[ ! -s "$LUA_RECIPE_LOG" ]]
+if LONEJSON_ENABLE_LIVE_TESTS=1 make -s -C "$repo_root" prerelease-live \
+    >"$lua_recipe_tmp/live" 2>&1; then
+  printf 'undefined live checks reported success\n' >&2; exit 1
+fi
+grep -F 'No live prerelease checks are defined' "$lua_recipe_tmp/live" >/dev/null
+: >"$LUA_RECIPE_LOG"
+if LUA_RECIPE_FAIL=tests/test_lua_fuzz.lua "$repo_root/scripts/test_lua_native.sh" "$lua_recipe_tmp/lua" "$lua_recipe_tmp/luarocks" tests/test_lua.lua tests/test_lua_fuzz.lua tests/not-reached.lua; then
+  printf 'native Lua driver swallowed a failing test\n' >&2; exit 1
+fi
+diff -u "$lua_recipe_tmp/expected" "$LUA_RECIPE_LOG"

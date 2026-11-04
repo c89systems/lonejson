@@ -1,12 +1,13 @@
+include("${CMAKE_CURRENT_LIST_DIR}/../LonejsonLifecycle.cmake")
 function(lonejson_configure_bootlin_toolchain target_id processor target_arch target_libc emulator)
   get_filename_component(_lonejson_source_dir "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../.." ABSOLUTE)
-  set(_lonejson_resolver "${_lonejson_source_dir}/scripts/cpkt-toolchains.sh")
+  set(_lonejson_resolver "${CPKT_LIFECYCLE_SCRIPTS_DIR}/cpkt-toolchains.sh")
   if(NOT EXISTS "${_lonejson_resolver}")
     message(FATAL_ERROR "missing lifecycle toolchain resolver: ${_lonejson_resolver}")
   endif()
 
   execute_process(
-    COMMAND "${_lonejson_resolver}" ensure "${target_id}"
+    COMMAND "${_lonejson_resolver}" discover "${target_id}"
     RESULT_VARIABLE _lonejson_result
     OUTPUT_VARIABLE _lonejson_description
     ERROR_VARIABLE _lonejson_error
@@ -14,21 +15,20 @@ function(lonejson_configure_bootlin_toolchain target_id processor target_arch ta
     ERROR_STRIP_TRAILING_WHITESPACE)
   if(NOT _lonejson_result EQUAL 0)
     message(FATAL_ERROR
-      "Bootlin ${target_id} toolchain provisioning failed.\n${_lonejson_error}")
+      "Bootlin ${target_id} toolchain discovery failed.\n${_lonejson_error}")
   endif()
 
-  string(REGEX MATCH "status=([^\r\n]+)" _lonejson_status_match "${_lonejson_description}")
-  if(NOT _lonejson_status_match OR NOT "${CMAKE_MATCH_1}" STREQUAL "ready")
+  if(NOT _lonejson_description MATCHES "(^|[\r\n])status=ready([\r\n]|$)")
     message(FATAL_ERROR
-      "Bootlin resolver did not provision a ready ${target_id} collection.\n${_lonejson_description}")
+      "Missing prepared Bootlin ${target_id} collection. Run scripts/cpkt-toolchains.sh ensure ${target_id} before configuring.\n${_lonejson_description}")
   endif()
 
   foreach(_lonejson_key root prefix target_triple sysroot libc cc cxx ld ar ranlib strip nm objcopy objdump addr2line gdb readelf)
-    string(REGEX MATCH "${_lonejson_key}=([^\r\n]+)" _lonejson_match "${_lonejson_description}")
+    string(REGEX MATCH "(^|[\r\n])${_lonejson_key}=([^\r\n]+)" _lonejson_match "${_lonejson_description}")
     if(NOT _lonejson_match)
       message(FATAL_ERROR "Bootlin resolver did not report ${_lonejson_key} for ${target_id}")
     endif()
-    set(_lonejson_${_lonejson_key} "${CMAKE_MATCH_1}")
+    set(_lonejson_${_lonejson_key} "${CMAKE_MATCH_2}")
   endforeach()
 
   get_filename_component(_lonejson_bin "${_lonejson_cc}" DIRECTORY)

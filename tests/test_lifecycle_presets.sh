@@ -40,7 +40,7 @@ for target_id in \
   require_text '"name": "'"$target_id"'-release"'
   require_text '"LONEJSON_TARGET_ID": "'"$target_id"'"'
   require_text '"LONEJSON_DIST_DIR": "${sourceDir}/dist"'
-  require_text '"LONEJSON_C_PKT_SYSTEMS_ROOT": "${sourceDir}/.cache/c.pkt.systems/'"$target_id"'/root"'
+  require_text '"LONEJSON_CPKT_ROOT": "${sourceDir}/.cache/cpkt/'"$target_id"'/root"'
 done
 
 while IFS='|' read -r target_id target_arch target_os target_libc; do
@@ -91,4 +91,36 @@ reject_text '"name": "linux-gnu-release"'
 reject_text '"name": "linux-musl-release"'
 reject_text '"configurePreset": "linux-gnu-release"'
 reject_text '"configurePreset": "linux-musl-release"'
-reject_text '${sourceDir}/.deps/c.pkt.systems'
+reject_text '${sourceDir}/.deps/cpkt'
+
+# Verify real preset selection with a minimal inventory; preset filters can
+# override command-line filters, so text checks alone do not establish scope.
+mkdir -p "$repo_root/build"
+fixture=$(mktemp -d "$repo_root/build/preset-selection.XXXXXX")
+trap 'rm -rf -- "$fixture"' EXIT
+cp "$presets" "$fixture/CMakePresets.json"
+for preset in debug asan tsan x86_64-linux-gnu-release host-curl; do
+  mkdir -p "$fixture/build/$preset"
+  cat >"$fixture/build/$preset/CTestTestfile.cmake" <<'TESTS'
+add_test(runtime cmake -E true)
+set_tests_properties(runtime PROPERTIES LABELS local TIMEOUT 5)
+add_test(policy cmake -E true)
+set_tests_properties(policy PROPERTIES LABELS host-policy TIMEOUT 5)
+add_test(service cmake -E true)
+set_tests_properties(service PROPERTIES LABELS e2e TIMEOUT 5)
+TESTS
+done
+for preset in asan tsan x86_64-linux-gnu-release; do
+  (cd "$fixture" && ctest --preset "$preset" --show-only=json-v1) >"$fixture/selected"
+  grep -F '"name" : "runtime"' "$fixture/selected" >/dev/null
+  ! grep -F '"name" : "policy"' "$fixture/selected"
+  ! grep -F '"name" : "service"' "$fixture/selected"
+done
+(cd "$fixture" && ctest --preset debug --show-only=json-v1) >"$fixture/selected"
+grep -F '"name" : "runtime"' "$fixture/selected" >/dev/null
+grep -F '"name" : "policy"' "$fixture/selected" >/dev/null
+! grep -F '"name" : "service"' "$fixture/selected"
+(cd "$fixture" && ctest --preset e2e --show-only=json-v1) >"$fixture/selected"
+grep -F '"name" : "service"' "$fixture/selected" >/dev/null
+! grep -F '"name" : "runtime"' "$fixture/selected"
+! grep -F '"name" : "policy"' "$fixture/selected"

@@ -16,8 +16,8 @@ serialize through that schema. That approach gives the library its character:
 it is strongly typed, stream-oriented, and deliberate about ownership and
 allocation.
 
-Repository: <https://github.com/sa6mwa/lonejson>  
-Examples: <https://github.com/sa6mwa/lonejson/tree/trunk/examples>
+Repository: <https://github.com/c89systems/lonejson>\
+Examples: <https://github.com/c89systems/lonejson/tree/trunk/examples>
 
 ## Use-case
 
@@ -1302,7 +1302,7 @@ string/file/JSONL serialization, optional curl integration, and the Lua binding.
 
 Online:
 
-- <https://github.com/sa6mwa/lonejson/tree/trunk/examples>
+- <https://github.com/c89systems/lonejson/tree/trunk/examples>
 
 ## Release artifacts
 
@@ -1323,13 +1323,24 @@ That command produces:
   rock, `lonejson-<version>-1.src.rock`
 - a SHA-256 manifest, `dist/lonejson-<version>-CHECKSUMS`
 
+Binary preparation keeps unrelated `dist/` artifacts and records its selected
+inventory under `build/packaging/checksums/`. Use `make package-verify-binary` for
+that scope. The full upload checksum manifest requires every selected SDK, Lua
+product, header, and source archive; full verification also rejects unlisted
+release artifacts. See [Local Verification](docs/local-verification.md).
+
 The compressed header artifact is the standalone embedded form for
 single-header integration. Its version macros are regenerated to match the
 resolved release version, from `VERSION` when present in a source package,
 otherwise from an exact lightweight `vX.Y.Z` tag on `HEAD`, and otherwise
 `0.0.0`. Before `make release` cleans generated state or builds artifacts, it
-runs `make lifecycle-version-contract` to verify that git-worktree version
-detection and Make agree on exact lightweight tags and explicit overrides.
+runs the read-only `make lifecycle-version-contract` check: the owning checkout
+must be clean and attached to its authoritative default branch, HEAD must have
+a verified commit signature and exactly one lightweight `vX.Y.Z` tag, and no
+candidate override may be set. Develop and verify on one branch, then squash
+onto the local default branch before final amendment/signing and tagging.
+Keep remote refs unchanged until the clean local release gate passes; never
+push to trigger CI. See [local verification](docs/local-verification.md).
 Ordinary CTest checks CMake overrides separately without mutating tags. The project-prefixed
 `LONEJSON_VERSION_OVERRIDE=X.Y.Z` escape hatch is for release-candidate
 rehearsals only; Make exports an explicit command-line override, and CMake
@@ -1360,8 +1371,9 @@ build the TSan probe. To prepare AFL++ for fuzzing:
 make toolchains-aflpp
 ```
 
-Each Linux CMake configuration provisions its selected, checksum-pinned
-Bootlin collection automatically. To inspect toolchain status or warm all
+Make entrypoints prepare their selected checksum-pinned Bootlin collection;
+CMake configuration and compiler probes only discover prepared tools. Before
+direct native CMake use, run `make deps-host`. To warm all
 Linux release collections before a matrix build:
 
 ```sh
@@ -1369,24 +1381,41 @@ make toolchains-all
 ```
 
 They are shared across pkt.systems projects at
-`${CPKT_TOOLCHAIN_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/c.pkt.systems/toolchains}`.
-Set `CPKT_TOOLCHAIN_CACHE` to relocate that cache. Native Apple Silicon macOS
+`${CPKT_TOOLCHAIN_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/cpkt/toolchains}`.
+Cache overrides must use owned `build/` or `.cache/` paths or the declared
+global cpkt cache; another checkout's state cannot be borrowed. Host Bash 4.4
+or newer is required. Native Apple Silicon macOS
 builds use the active Apple compiler and macOS SDK reported by `xcrun`, including
 native presets, the Darwin release preset, curl examples, and LuaRocks. Install
 Xcode or Command Line Tools first. Building Darwin artifacts on Linux requires
 an explicit osxcross/SDK setup; the project never downloads Apple SDKs.
-`scripts/cpkt-toolchains.sh discover` reports every supported target, including
-native Apple tools on macOS and optional local osxcross availability on Linux.
+`scripts/cpkt-toolchains.sh discover` reports every supported target. Use
+`discover arm64-apple-darwin` for native Apple tools on macOS or local
+osxcross/host-MIG readiness on Linux.
 Shared Bootlin and AFL++ provisioning waits at most
 `${CPKT_TOOLCHAIN_LOCK_TIMEOUT:-600}` seconds for the matching cache lock.
-Checkout-local fixture, Lua-rock, and standalone-header locks use
-`${LONEJSON_LOCK_TIMEOUT_SECONDS:-120}` seconds.
+Each operation owns its mutable checkout workspaces. Run lifecycle commands
+serially with stable sources, configuration, and prepared tool collections.
+`make` defaults to two build jobs; set `LONEJSON_BUILD_JOBS` or
+`CMAKE_BUILD_PARALLEL_LEVEL` to change that limit. CTest presets run serially,
+reject empty selections, and stop on failure. The terminal or job runner cancels
+the entire job/process group; signalling only a helper PID is unsupported.
+After copying or restoring inputs with preserved timestamps, invalidate the
+affected build and verification state explicitly.
 
-Pinned c.pkt.systems SDK archives use the adjacent shared cache
-`${CPKT_DEPENDENCY_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/c.pkt.systems/deps}`.
+The core JSON implementation has no cpkt API dependency. Optional curl/auth
+features, Lua bindings, tests and SDK builds use the core SDK from
+[`github.com/c89systems/cpkt` 0.6.1](https://github.com/c89systems/cpkt/releases/tag/v0.6.1).
+No `cpktdb` or `cpktmisc` package is required. Select the extracted prefix with
+`LONEJSON_CPKT_ROOT`. Pinned cpkt SDK archives use the adjacent shared cache
+`${CPKT_DEPENDENCY_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/cpkt/deps}`.
 Each archive is verified by SHA-256 before reuse and is keyed by that digest;
 only the extracted SDK root belongs to this checkout under `.cache/`. `make
 clean` preserves both shared caches.
+
+Run `make build` after checkout or full cleanup to prepare the native headers
+and `build/debug/compile_commands.json` used by `.clangd`. After this dependency
+migration, refresh old CMake caches with `cmake --fresh --preset <preset>`.
 
 ## Local Podman Kube e2e
 
@@ -1448,8 +1477,8 @@ mandatory sanitizer coverage. `make prerelease` runs the complete release
 pipeline without cleaning generated state first: native debug/Lua tests,
 sanitizers, Valgrind, deterministic e2e, fuzz smoke and benchmark checks, then
 the release matrix that builds, checksums, and verifies binary SDKs and Lua
-artifacts. `make release` is the final clean release gate; it first runs the lightweight-tag
-version contract, then cleans generated state, then runs the same release
+artifacts. `make release` is the final clean release gate; it first validates clean committed source and an exact lightweight
+release tag, then cleans generated state, then runs the same release
 pipeline, followed by source-archive reconstruction and full artifact
 verification. Source reconstruction is reserved for the final release path.
 `make test-all-bindings` is a compatibility alias for the Lua

@@ -42,8 +42,8 @@ function(lonejson_configure_development_runtime target)
     "${LONEJSON_BOOTLIN_TOOLCHAIN_ROOT}/${LONEJSON_BOOTLIN_TARGET_TRIPLE}/lib"
     "${LONEJSON_BOOTLIN_TOOLCHAIN_ROOT}/${LONEJSON_BOOTLIN_TARGET_TRIPLE}/lib64"
     "${CMAKE_CURRENT_BINARY_DIR}")
-  if(LONEJSON_C_PKT_SYSTEMS_ROOT)
-    list(APPEND _lonejson_runtime_dirs "${LONEJSON_C_PKT_SYSTEMS_ROOT}/lib")
+  if(LONEJSON_CPKT_ROOT)
+    list(APPEND _lonejson_runtime_dirs "${LONEJSON_CPKT_ROOT}/lib")
   endif()
   if(_lonejson_extra_runtime_dirs)
     list(APPEND _lonejson_runtime_dirs

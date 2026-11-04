@@ -8,11 +8,13 @@ tmp_dir=$(mktemp -d "$workspace_root/build/test_native_darwin_toolchain.XXXXXX")
 trap 'rm -rf "$tmp_dir"' EXIT
 fixture="$tmp_dir/repo"
 mkdir -p "$tmp_dir/lib" "$tmp_dir/include" "$fixture/scripts" "$fixture/cmake/toolchains" "$tmp_dir/bin" "$tmp_dir/SDK"
-for name in cpkt-toolchains cpkt-archive-cache cpkt-native-apple build_lua_rock detect_c_pkt_systems_bundle detect_native_target; do
+for name in cpkt-toolchains cpkt-native-apple require_cache_path build_lua_rock detect_cpkt_bundle detect_native_target; do
   cp "$repo_root/scripts/$name.sh" "$fixture/scripts/"
 done
+mkdir -p "$fixture/tools/lifecycle/scripts"
+cp "$repo_root/tools/lifecycle/scripts/"*.sh "$fixture/tools/lifecycle/scripts/"
 cp "$repo_root/cmake/toolchains/"{native,lonejson_native_darwin,arm64-apple-darwin}.cmake "$fixture/cmake/toolchains/"
-cp "$repo_root/cmake/LonejsonCompiler.cmake" "$repo_root/cmake/lonejson_lua.exports" "$repo_root/cmake/lonejson.exports" "$fixture/cmake/"
+cp "$repo_root/cmake/LonejsonLifecycle.cmake" "$repo_root/cmake/LonejsonCompiler.cmake" "$repo_root/cmake/lonejson_lua.exports" "$repo_root/cmake/lonejson.exports" "$fixture/cmake/"
 cp "$repo_root/include/lonejson.h" "$tmp_dir/include/"
 : >"$tmp_dir/lib/liblonejson.dylib"
 cp "$repo_root/scripts/check_library_exports.sh" "$fixture/scripts/"
@@ -71,8 +73,8 @@ chmod +x "$tmp_dir/bin/"*
 export TEST_ROOT="$tmp_dir" UNAME="$tmp_dir/bin/uname"
 export PATH="$tmp_dir/bin:$PATH" OSXCROSS_ROOT="$tmp_dir/missing-osxcross" CC=/bin/false
 export CPKT_OSXCROSS_HOST=arm64-apple-darwin25 PKG_CONFIG="$tmp_dir/bin/pkg-config"
-export CPKT_TOOLCHAIN_CACHE="$tmp_dir/toolchain-cache"
-unset LONEJSON_C_PKT_SYSTEMS_TARGET_ID CPKT_SYSROOT
+export CPKT_TOOLCHAIN_CACHE="$fixture/build/toolchain-cache"
+unset LONEJSON_CPKT_TARGET_ID CPKT_SYSROOT
 description=$("$fixture/scripts/cpkt-toolchains.sh" ensure arm64-apple-darwin)
 grep -Fx 'source=apple' <<<"$description"
 grep -Fx "cc=$tmp_dir/bin/clang" <<<"$description"
