@@ -552,6 +552,8 @@ typedef struct lonejson__array_stream_state {
   int owns_fd;
   lonejson_array_stream_source_kind source_kind;
   lonejson_array_stream_state state;
+  int record_reuse;
+  int processing_started;
   lonejson_array_stream_phase phase;
   char *path;
   size_t path_len;
@@ -652,7 +654,8 @@ lonejson__array_stream_state_const(const lonejson_array_stream *stream) {
              : NULL;
 }
 
-struct lonejson_sse {
+typedef struct lonejson__sse_state {
+  lonejson_sse public;
   lonejson_sse_options options;
   lonejson_allocator allocator;
   lonejson__byte_buffer line;
@@ -687,7 +690,15 @@ struct lonejson_sse {
   int json_retained_active;
   lonejson_json_value *json_retained_value;
   int json_retained_value_active;
-};
+} lonejson__sse_state;
+
+static LONEJSON__INLINE lonejson__sse_state *
+lonejson__sse_state_mut(lonejson_sse *sse) {
+  return sse != NULL
+             ? (lonejson__sse_state *)((char *)sse -
+                                       offsetof(lonejson__sse_state, public))
+             : NULL;
+}
 
 typedef enum lonejson__multipart_phase {
   LONEJSON__MULTIPART_EXPECT_BOUNDARY = 1,
@@ -697,7 +708,8 @@ typedef enum lonejson__multipart_phase {
   LONEJSON__MULTIPART_DONE = 5
 } lonejson__multipart_phase;
 
-struct lonejson_multipart {
+typedef struct lonejson__multipart_state {
+  lonejson_multipart public;
   lonejson_multipart_options options;
   lonejson_allocator allocator;
   lonejson__byte_buffer boundary;
@@ -719,7 +731,16 @@ struct lonejson_multipart {
   int in_part;
   int closed;
   lonejson__multipart_phase phase;
-};
+} lonejson__multipart_state;
+
+static LONEJSON__INLINE lonejson__multipart_state *
+lonejson__multipart_state_mut(lonejson_multipart *multipart) {
+  return multipart != NULL
+             ? (lonejson__multipart_state *)((char *)multipart -
+                                             offsetof(lonejson__multipart_state,
+                                                      public))
+             : NULL;
+}
 
 typedef union lonejson__alloc_header_align_union {
   void *ptr;

@@ -613,10 +613,14 @@ static void lonejson__array_stream_resolve_value_limits(
 static lonejson_status
 lonejson__array_stream_start_mapped_value(lonejson__array_stream_state *stream,
                                           const lonejson_map *map, void *dst) {
+  lonejson__parse_options options;
+  options = stream->options;
+  if (stream->record_reuse) {
+    options.clear_destination = 0;
+  }
   if (stream->value_parser_initialized &&
       stream->value_parser.root_map == map && !stream->value_parser.failed) {
-    stream->value_parser.options.clear_destination =
-        stream->options.clear_destination;
+    stream->value_parser.options.clear_destination = options.clear_destination;
     lonejson__parser_restart_stream(&stream->value_parser, dst);
   } else {
     if (stream->value_parser_initialized) {
@@ -625,8 +629,8 @@ lonejson__array_stream_start_mapped_value(lonejson__array_stream_state *stream,
       stream->value_prepared_dst = NULL;
     }
     lonejson__parser_init_state(
-        &stream->value_parser, map, dst, &stream->options, stream->runtime, 0,
-        0, 0, 0u, stream->value_workspace, sizeof(stream->value_workspace));
+        &stream->value_parser, map, dst, &options, stream->runtime, 0, 0, 0, 0u,
+        stream->value_workspace, sizeof(stream->value_workspace));
     stream->value_parser_initialized = 1;
   }
 
@@ -1274,6 +1278,8 @@ lonejson__array_stream_assign_methods(lonejson_array_stream *stream) {
     return;
   }
   stream->next = lonejson_array_stream_next;
+  stream->set_record_reuse = lonejson_array_stream_set_record_reuse;
+  stream->error_fn = lonejson_array_stream_error;
   stream->next_value = lonejson_array_stream_next_value;
   stream->push = lonejson_array_stream_push;
   stream->finish = lonejson_array_stream_finish;
@@ -1577,6 +1583,7 @@ static lonejson_array_stream_result lonejson__array_stream_next_raw(
                         "array stream is required");
     return LONEJSON_ARRAY_STREAM_ERROR;
   }
+  stream->processing_started = 1;
   if (stream->state == LONEJSON_ARRAY_STREAM_STATE_ERROR) {
     if (error != NULL) {
       *error = stream->public.error;
@@ -1909,6 +1916,26 @@ static lonejson_array_stream_result lonejson__array_stream_next_raw(
   }
 }
 
+lonejson_status
+lonejson_array_stream_set_record_reuse(lonejson_array_stream *stream,
+                                       int enabled, lonejson_error *error) {
+  lonejson__array_stream_state *state;
+  if (stream == NULL || (enabled != 0 && enabled != 1)) {
+    return lonejson__set_error(
+        error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u, 0u,
+        "array stream and enabled value 0 or 1 are required");
+  }
+  state = lonejson__array_stream_state_mut(stream);
+  if (state->processing_started) {
+    return lonejson__set_error(
+        error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u, 0u,
+        "configure record reuse before array stream processing starts");
+  }
+  state->record_reuse = enabled;
+  lonejson__clear_error(error);
+  return LONEJSON_STATUS_OK;
+}
+
 lonejson_array_stream_result
 lonejson_array_stream_next(lonejson_array_stream *stream,
                            const lonejson_map *map, void *dst,
@@ -2003,7 +2030,9 @@ lonejson__array_stream_push_invoke(lonejson__array_stream_state *stream,
   lonejson_status status;
 
   status = callback(user, dst);
-  lonejson_cleanup(map, dst);
+  if (!stream->record_reuse) {
+    lonejson_cleanup(map, dst);
+  }
   if (status != LONEJSON_STATUS_OK) {
     (void)lonejson__array_stream_set_error(stream, status,
                                            "array stream item callback failed");
@@ -2092,6 +2121,7 @@ static lonejson_status lonejson__array_stream_push_common(
                         "input bytes are required");
     return LONEJSON_STATUS_INVALID_ARGUMENT;
   }
+  stream->processing_started = 1;
   if (stream->state == LONEJSON_ARRAY_STREAM_STATE_DONE) {
     lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u, 0u,
                         "array stream is already finished");
@@ -2227,6 +2257,7 @@ static lonejson_status lonejson__array_stream_push_string_common(
                         "input bytes are required");
     return LONEJSON_STATUS_INVALID_ARGUMENT;
   }
+  stream->processing_started = 1;
   if (stream->state == LONEJSON_ARRAY_STREAM_STATE_DONE) {
     lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u, 0u,
                         "array stream is already finished");

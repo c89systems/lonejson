@@ -425,8 +425,9 @@ static lonejson_status test_sse_push_json(
   const lonejson_runtime *runtime_state =
       lonejson__runtime_const(test_default_runtime());
   if (parse_options == NULL) {
-    return lonejson_sse_push_json(test_default_runtime(), sse, map, dst, bytes,
-                                  len, options, event_cb, user, error);
+    return test_default_runtime()->sse_push_json(test_default_runtime(), sse,
+                                                 map, dst, bytes, len, options,
+                                                 event_cb, user, error);
   }
   return lonejson__sse_push_json_with_options(sse, map, dst, bytes, len,
                                               parse_options, runtime_state,
@@ -442,8 +443,8 @@ test_sse_finish_json(lonejson_sse *sse, const lonejson_map *map, void *dst,
   const lonejson_runtime *runtime_state =
       lonejson__runtime_const(test_default_runtime());
   if (parse_options == NULL) {
-    return lonejson_sse_finish_json(test_default_runtime(), sse, map, dst,
-                                    options, event_cb, user, error);
+    return test_default_runtime()->sse_finish_json(
+        test_default_runtime(), sse, map, dst, options, event_cb, user, error);
   }
   return lonejson__sse_finish_json_with_options(sse, map, dst, parse_options,
                                                 runtime_state, options,
@@ -460,9 +461,9 @@ test_sse_push_json_value(lonejson_sse *sse, lonejson_json_value *value,
   const lonejson_runtime *runtime_state =
       lonejson__runtime_const(test_default_runtime());
   if (parse_options == NULL) {
-    return lonejson_sse_push_json_value(test_default_runtime(), sse, value,
-                                        bytes, len, options, event_cb, user,
-                                        error);
+    return test_default_runtime()->sse_push_json_value(
+        test_default_runtime(), sse, value, bytes, len, options, event_cb, user,
+        error);
   }
   return lonejson__sse_push_json_value_with_options(
       sse, value, bytes, len, parse_options, runtime_state, options, event_cb,
@@ -478,8 +479,8 @@ test_sse_finish_json_value(lonejson_sse *sse, lonejson_json_value *value,
   const lonejson_runtime *runtime_state =
       lonejson__runtime_const(test_default_runtime());
   if (parse_options == NULL) {
-    return lonejson_sse_finish_json_value(test_default_runtime(), sse, value,
-                                          options, event_cb, user, error);
+    return test_default_runtime()->sse_finish_json_value(
+        test_default_runtime(), sse, value, options, event_cb, user, error);
   }
   return lonejson__sse_finish_json_value_with_options(
       sse, value, parse_options, runtime_state, options, event_cb, user, error);
@@ -892,8 +893,8 @@ test_generator_measure(const lonejson_map *map, const void *src,
                        size_t *out_len, const lonejson__write_options *options,
                        lonejson_error *error) {
   if (options == NULL) {
-    return lonejson_generator_measure(test_default_runtime(), map, src, out_len,
-                                      error);
+    return test_default_runtime()->generator_measure(test_default_runtime(),
+                                                     map, src, out_len, error);
   }
   return lonejson__generator_measure_with_options(map, src, out_len, options,
                                                   error);
@@ -919,8 +920,8 @@ static lonejson_status test_writer_generator_init(
   const lonejson_runtime *runtime_state =
       lonejson__runtime_const(test_default_runtime());
   if (options == NULL) {
-    return lonejson_writer_generator_init(test_default_runtime(), generator,
-                                          producer, producer_user);
+    return test_default_runtime()->writer_generator_init(
+        test_default_runtime(), generator, producer, producer_user);
   }
   return lonejson__writer_generator_init_with_options(
       generator, producer, producer_user, options, runtime_state);

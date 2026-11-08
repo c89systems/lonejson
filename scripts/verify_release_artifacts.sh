@@ -129,8 +129,9 @@ scan_shipped_payload_for_bootlin_toolchain_paths() {
   # but a distributed library or its package metadata must never name a local
   # Bootlin collection.  Match both the lifecycle cache layout and the stable
   # collection directory itself so a CPKT_TOOLCHAIN_CACHE override cannot hide
-  # the leak behind a different parent directory.
-  toolchain_path_pattern='/(cpkt/)?toolchains(/roots)?/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
+  # the leak behind a different parent directory. Repository paths such as
+  # cmake/toolchains/native.cmake are not machine-specific cache paths.
+  toolchain_path_pattern='/cpkt/toolchains/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
 
   while IFS= read -r file_path; do
     rel_path="${file_path#"$root"/}"

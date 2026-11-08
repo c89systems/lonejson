@@ -1086,7 +1086,7 @@ static void test_sse_json_rejects_runtime_changes_mid_event(void) {
   lonejson_json_value_init(second_lj, &value);
   EXPECT(lonejson_json_value_enable_parse_capture(&value, &error) ==
          LONEJSON_STATUS_OK);
-  lonejson__sse_json_reset_event(sse);
+  lonejson__sse_json_reset_event(lonejson__sse_state_mut(sse));
   status = lonejson_sse_push_json_value(
       first_lj, sse, &value, chunk0, strlen(chunk0), NULL, NULL, NULL, &error);
   EXPECT(status == LONEJSON_STATUS_OK);

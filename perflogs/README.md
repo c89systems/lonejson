@@ -4,8 +4,8 @@ Generated benchmark artifacts live here.
 
 The standalone Lua benchmark harness writes its artifacts under
 the same per-host archive as the C benchmark. That harness is intentionally
-separate because it depends on Lua/LuaRocks and compares Lua lanes only against
-lonejson's C sibling lanes, not an external C comparator.
+separate because it depends on Lua/LuaRocks. Its gates compare Lua lanes with
+the frozen Lua baseline; ratios against lonejson's C sibling lanes are informational.
 
 Benchmark output is scoped by a privacy-preserving host id:
 
@@ -27,9 +27,10 @@ Files:
 
 The benchmark tool reads and writes these files using `lonejson` itself.
 
-The C benchmark harness measures lonejson only. Earlier releases carried YAJL
-comparison lanes, but those external comparator lanes are gone; the supported
-workflow now is "measure lonejson, compare to the frozen lonejson baseline".
+The C benchmark harness measures lonejson only. The Lua harness may also report
+optional `lua-cjson` one-shot and line-by-line JSONL decode lanes from
+`workloadbench.jsonl`. These bounded-memory reference lanes are informational,
+excluded from gates, and do not model lonejson streaming or large generated fixtures.
 
 Methodology:
 

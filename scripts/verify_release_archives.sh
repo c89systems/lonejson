@@ -275,8 +275,9 @@ require_no_bootlin_toolchain_paths() {
   # Release packages must be relocatable.  A Bootlin collection path belongs
   # only to a local development executable, never to a packaged library,
   # static archive, or consumer metadata.  The collection-name match also
-  # catches installations moved through CPKT_TOOLCHAIN_CACHE.
-  toolchain_path_pattern='/(cpkt/)?toolchains(/roots)?/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
+  # catches installations moved through CPKT_TOOLCHAIN_CACHE. Repository paths
+  # such as cmake/toolchains/native.cmake are not machine-specific cache paths.
+  toolchain_path_pattern='/cpkt/toolchains/|/[^[:space:]:;]*(x86-64|aarch64|armv7-eabihf)--(glibc|musl)--stable-[^[:space:]:;]*'
   if grep -aRE "$toolchain_path_pattern" "$package_root" >/dev/null 2>&1; then
     printf 'pinned Bootlin toolchain path leaked in release archive: %s\n' \
       "$archive" >&2
@@ -336,7 +337,9 @@ require_archive_contract() {
       "share/doc/" | \
       "share/doc/liblonejson/" | \
       "share/doc/liblonejson/LICENSE" | \
-      "share/doc/liblonejson/README.md")
+      "share/doc/liblonejson/README.md" | \
+      "share/doc/liblonejson/docs/" | \
+      "share/doc/liblonejson/docs/"*".md")
         ;;
       *)
         printf 'unexpected file in release archive %s: %s\n' "$archive" "$entry_without_root" >&2

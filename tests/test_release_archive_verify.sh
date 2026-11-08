@@ -644,6 +644,10 @@ done
 
 printf 'license\n' >"$package_root/share/doc/liblonejson/LICENSE"
 printf 'readme\n' >"$package_root/share/doc/liblonejson/README.md"
+mkdir -p "$package_root/share/doc/liblonejson/docs"
+cat >"$package_root/share/doc/liblonejson/docs/toolchains.md" <<'EOF'
+Use `cmake/toolchains/native.cmake` for native builds.
+EOF
 
 cat >"$build_root/x86_64-linux-gnu-release/CMakeCache.txt" <<EOF
 CMAKE_C_COMPILER:FILEPATH=$CC
@@ -662,6 +666,7 @@ cp "$repo_root/scripts/"{archive_release_tree,require_build_workspace,discover_t
 cp "$repo_root/tools/lifecycle/scripts/"*.sh "$tmp_dir/tools/lifecycle/scripts/"
 cp "$repo_root/cmake/"{lonejson_build_workspace,lonejson_target_tools,lonejson_dist_dir,cpkt_metadata}.cmake "$tmp_dir/cmake/"
 cp "$repo_root/LICENSE" "$repo_root/README.md" "$tmp_dir/"
+cp -R "$repo_root/docs" "$tmp_dir/docs"
 cat >"$build_root/x86_64-linux-gnu-release/cmake_install.cmake" <<EOF
 file(COPY "$package_root/" DESTINATION "\${CMAKE_INSTALL_PREFIX}")
 EOF
@@ -678,6 +683,12 @@ done
 cmp "$tmp_dir/produced-022.tar.gz" "$tmp_dir/produced-077.tar.gz" || {
   printf 'SDK producer changed shipped bytes with staging metadata\n' >&2; exit 1;
 }
+mkdir -p "$tmp_dir/produced-docs"
+tar -xzf "$tmp_dir/produced-022.tar.gz" -C "$tmp_dir/produced-docs" \
+  liblonejson-9.9.9-x86_64-linux-gnu/share/doc/liblonejson/docs
+for doc in "$repo_root"/docs/*.md; do
+  cmp "$doc" "$tmp_dir/produced-docs/liblonejson-9.9.9-x86_64-linux-gnu/share/doc/liblonejson/docs/${doc##*/}"
+done
 
 "$AR" rcs "$dependency_root/lib/libcurl.a"
 "$AR" rcs "$dependency_root/lib/libcrypto.a"
@@ -790,6 +801,28 @@ if "$repo_root/scripts/verify_release_archives.sh" \
   exit 1
 fi
 grep -F 'pinned Bootlin toolchain path leaked in release archive' "$custom_cache_log" >/dev/null
+
+# Documentation may name repository toolchain files, but actual workstation
+# collection paths must still be rejected there as in libraries and metadata.
+doc_cache_dist_dir="$tmp_dir/doc-cache-dist"
+doc_cache_package_dir="$tmp_dir/doc-cache-package"
+doc_cache_root="$doc_cache_package_dir/liblonejson-9.9.9-x86_64-linux-gnu"
+mkdir -p "$doc_cache_dist_dir"
+cp -R "$tmp_dir/package" "$doc_cache_package_dir"
+printf '%s\n' '/srv/build-cache/cpkt/toolchains/roots/prepared-sdk/sysroot/lib' \
+  >>"$doc_cache_root/share/doc/liblonejson/docs/toolchains.md"
+tar -C "$doc_cache_package_dir" -czf \
+  "$doc_cache_dist_dir/liblonejson-9.9.9-x86_64-linux-gnu.tar.gz" \
+  "liblonejson-9.9.9-x86_64-linux-gnu"
+(cd "$doc_cache_dist_dir" && sha256sum liblonejson-9.9.9-x86_64-linux-gnu.tar.gz >lonejson-9.9.9-CHECKSUMS)
+doc_cache_log="$tmp_dir/doc-cache.log"
+if "$repo_root/scripts/verify_release_archives.sh" \
+    "$repo_root" "$doc_cache_dist_dir/lonejson-9.9.9-CHECKSUMS" \
+    "$build_root" >"$doc_cache_log" 2>&1; then
+  printf 'expected archive verification to fail on a toolchain cache path in documentation\n' >&2
+  exit 1
+fi
+grep -F 'pinned Bootlin toolchain path leaked in release archive' "$doc_cache_log" >/dev/null
 
 missing_metadata_dist_dir="$tmp_dir/missing-metadata-dist"
 missing_metadata_package_dir="$tmp_dir/missing-metadata-package"

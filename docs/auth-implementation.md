@@ -1,100 +1,15 @@
-# lonejson Auth Implementation
+# Authentication API reference
 
-This document describes the current JWT, JWK, JWKS, OAuth2, and OIDC
-implementation in lonejson. It is a status writeup for the implemented feature
-surface, including boundaries, invariants, verification, and known gaps.
+This reference covers JWT/JWK/JWKS validation and the supported OAuth2/OIDC
+flows. For compile-time features and provider setup, see [Integration](integration.md).
+For HTTP callbacks, client flows, M2M stores and web handlers, see
+[Authentication integration](authentication.md). The dependency and package
+requirements are defined in the [integration contract](third-party-integrations.md).
 
-The implementation is intentionally not a full identity-provider SDK, HTTP
-client, HTTP server, Kore integration, or Vectis integration. It provides
-bounded JSON-centered authentication primitives and small flow helpers. Network
-fetching, browser launching, request routing, response writing, retry policy,
-proxy policy, TLS policy, credential storage, logging policy, and framework
-lifetime rules remain caller-owned.
-
-## Feature Gates
-
-The auth surface is compile-time optional.
-
-- `LONEJSON_WITH_OPENSSL` enables OpenSSL-backed cryptographic internals.
-- `LONEJSON_WITH_JWT` enables JWT, JWK, JWKS, and claim/signature validation
-  APIs. It does not require OpenSSL at the core API boundary.
-- `LONEJSON_WITH_CURL` enables existing curl adapter APIs.
-- `LONEJSON_WITH_OIDC` enables OAuth2/OIDC helpers. It requires
-  `LONEJSON_WITH_JWT`, but does not require curl or OpenSSL at the core API
-  boundary.
-
-The corresponding CMake options are:
-
-- `LONEJSON_BUILD_WITH_OPENSSL`
-- `LONEJSON_BUILD_WITH_JWT`
-- `LONEJSON_BUILD_WITH_CURL`
-- `LONEJSON_BUILD_WITH_OIDC`
-
-CMake enforces only the core feature graph. `LONEJSON_BUILD_WITH_OIDC=ON`
-without JWT is a configure error. JWT and OIDC builds without OpenSSL/curl are
-valid and must compile; trust operations that need crypto fail with an
-actionable missing-provider error until an auth provider is installed.
-
-When `LONEJSON_CPKT_ROOT` is set, enabled integrations are resolved
-through the cpkt bundle. OIDC-capable release/package builds enable the
-curl and JWT/OIDC integration surfaces but keep the OpenSSL adapter disabled for
-the plain core SDK. Normal consumers, and JWT/OIDC core consumers that provide
-their own auth providers, do not need curl or OpenSSL headers.
-
-## Dependency And Packaging Posture
-
-JWT/OIDC core builds do not own HTTP or crypto dependencies. They expose
-bounded parsing, policy, cache, and validation orchestration. Cryptographic
-trust decisions go through a `lonejson_auth_provider` installed on the runtime:
-
-```c
-lonejson_auth_provider provider;
-lonejson_auth_provider_init_openssl(&provider, NULL, &error);
-lonejson_set_auth_provider(runtime, &provider, &error);
-```
-
-The provider vtable is receiver-style and narrow: verify one JWS, produce
-random bytes, and compute SHA-256. Signature validation uses `verify_jws`;
-PKCE challenge generation uses `sha256`; PKCE verifier generation and M2M
-credential/signup helpers use both `random_bytes` and `sha256`. Downstream
-projects that already own OpenSSL can use the optimized OpenSSL initializer.
-Projects using another crypto stack can provide equivalent callbacks without
-exposing that stack through `lonejson.h`. Both choices are valid; OpenSSL is a
-convenience adapter, not the auth contract.
-Runtime userdata also exposes method pointers for runtime-backed auth helpers,
-including JWT decode/signature verification, JWK/JWKS parsing, OIDC discovery
-fetch/parse, JWKS cache update/refresh, OAuth2 token response parsing and
-provider-backed token exchanges, and bearer-token validation. These method
-pointers are wired to the same implementation as the free functions; there is
-no separate runtime code path.
-
-OpenSSL-enabled builds link OpenSSL Crypto only for the optional OpenSSL auth
-adapter. That adapter is an integration, not a baseline package dependency. The
-plain release SDK must not expose OpenSSL, libcrypto, or libssl in pkg-config
-or CMake consumer metadata.
-
-HTTP follows the same rule. OAuth2/OIDC fetch helpers call a
-`lonejson_http_provider`; the provider implementation may use libcurl or any
-other transport that satisfies the callback contract. Curl helpers are
-optimized adapters for the libcurl path, not a mandatory dependency of the
-plain SDK.
-
-Release archive verification also checks that public package metadata does not
-unconditionally expose curl/OpenSSL requirements to consumers of the plain
-`lonejson` package. Binary release archives must still include and verify the
-auth/curl ABI symbols when built as release artifacts.
-
-The general third-party integration contract is documented in
-`docs/third-party-integrations.md`.
-
-The important release checks are:
-
-- build-tree curl ABI symbol checks,
-- build-tree JWT/OIDC ABI symbol checks,
-- release archive metadata checks,
-- release archive dependency-leak checks,
-- release archive ABI symbol checks,
-- Darwin Mach-O metadata checks for install names and dependency paths.
+Parsing a token does not establish trust. Validate its signature against a
+trusted key and its claims against an explicit policy, or use the composed
+bearer-validation helper. Network transport, TLS policy, credential storage
+and application authorization remain caller-owned.
 
 ## Ownership And Memory Model
 
@@ -947,201 +862,33 @@ Implemented and tested invariants include:
 
 ## Verification
 
-The implementation is covered by:
+The maintained checks are:
 
-- C unit and regression tests in `tests/test_jwt.inc.h`,
-- Lua facade tests in `tests/test_lua.lua`,
-- ABI export checks in `scripts/check_jwt_abi_symbols.sh`,
-- release archive verifier checks in `tests/test_release_archive_verify.sh`,
-- fuzzer coverage in `fuzz/fuzz_jwt.c`,
-- makefile fuzz target registration checks,
-- cpkt dependency route tests,
-- curl/OpenSSL dependency leakage checks,
-- release metadata checks,
-- OIDC/OAuth2 e2e in `scripts/test_oidc_e2e.sh`,
-- M2M/signup e2e in `scripts/test_m2m_e2e.sh`.
+| Layer | Coverage |
+| --- | --- |
+| C regression tests | `tests/test_jwt.inc.h`: parsing, trust policies, provider failures and cleanup. |
+| Lua facade | `tests/test_lua.lua`: Lua-exposed workflows and policy parity. |
+| Fuzzing | `fuzz/fuzz_jwt.c` and JWT seeds: untrusted token, key and discovery inputs. |
+| Package/ABI | `scripts/check_jwt_abi_symbols.sh` and `tests/test_release_archive_verify.sh`: exports, feature metadata and dependency boundaries. |
+| Local OIDC/OAuth2 | `make test-oidc-e2e`: discovery, JWKS, exchanges, refresh, introspection, revocation, UserInfo and bearer policy. |
+| Local M2M/signup | `make test-m2m-e2e`: Basic/Bearer credentials, rejection, signup consumption and generated credentials. |
 
-Current e2e coverage is targeted rather than exhaustive for every JOSE policy
-branch. `make test-oidc-e2e` uses the local Podman Kube OIDC/OAuth2 provider,
-`curl` as the non-lonejson client, and a lonejson-backed fixture server to
-exercise discovery, JWKS refresh, bearer validation, authorization-code token
-exchange, refresh-token exchange, token-flow refresh, token introspection,
-token revocation, and UserInfo. The same live bearer endpoint also verifies
-fail-closed rejection for missing bearer credentials, wrong audience, missing
-scope, wrong `azp`, and missing `azp`, plus acceptance for strict
-multi-audience tokens with the expected `azp` and `scp` array scope tokens.
-`make test-m2m-e2e` uses `curl` against a lonejson-backed fixture server to
-exercise Basic credentials, Bearer API keys, missing/wrong credentials, signup
-completion, consumed-signup rejection, and signup-generated Basic/Bearer
-credentials.
+The e2e fixtures use curl as the client. Detailed JOSE branches such as `crit`,
+`key_ops` and certificate-chain/thumbprint failures are covered by C/Lua/fuzz
+checks rather than a separate live-provider scenario for each case. Use
+`make test-host-curl` for the native C suite with all auth features enabled;
+see [local verification](local-verification.md) for prerequisites and the
+complete gate. These commands describe coverage, not a saved test result.
 
-Detailed JOSE policy invariants that require custom token/JWK construction,
-such as fail-closed `crit`, JWK `key_ops`, and `x5c`
-certificate-chain/thumbprint failure modes, are covered by C unit/regression
-tests, Lua facade tests where exposed, and JWT fuzz seeds rather than by
-dedicated live OIDC e2e scenarios.
+## Limitations
 
-The standard auth verification path for the current branch is:
-
-```sh
-make test-host
-make test-oidc-e2e
-make test-m2m-e2e
-make fuzz-smoke
-```
-
-At the time this document was updated, those gates passed on the feature branch
-containing the auth implementation. If new auth behavior is added, the proof
-must move with the behavior: C tests for policy detail, Lua tests for facade
-parity, fuzz seeds for untrusted inputs, and e2e when the behavior crosses an
-HTTP/provider boundary.
-
-## Known Gaps And Non-Implemented Work
-
-The following are deliberate gaps or future work, not hidden behavior.
-
-- No built-in HTTP transport; caller-owned providers perform network I/O.
-- Token-flow state helpers retain token state, transparently refresh expired
-  access tokens by default when a refresh token is available, apply bounded
-  retry policy, and expose opt-out controls.
-- No timeout, proxy, redirect, or TLS policy helper; those remain provider-owned.
-- No built-in credential persistence, locking, or encryption helper. The M2M
-  helpers generate store-ready JSON records, verify caller-owned JSON store
-  bytes, and complete signup seeds into generated credentials. Applications
-  still own durable storage and concurrent updates.
-- M2M e2e now covers Basic credentials, Bearer API keys, missing/wrong
-  credentials, signup seed completion, consumed signup rejection, and use of
-  signup-generated Basic and Bearer credentials from `curl`.
-- No complete browser-launch helper.
-- No localhost HTTP listener.
-- No random callback-path session object.
-- No Kore-specific or Vectis-specific middleware API.
-- No HTTP response writer for auth failures.
-- No request-router integration.
-- No implemented HS256 or `none` validation support. `none` remains rejected.
-- No Ed448 support for `EdDSA`; the OpenSSL provider currently supports
-  Ed25519 OKP keys.
-- Certificate-backed JWK trust requires the OpenSSL auth provider. Non-OpenSSL
-  builds parse and syntax-check `x5c`, `x5t`, and `x5t#S256`, but cannot
-  validate certificate chains or thumbprints.
-- `crit` JOSE header handling is fail-closed: every critical header name must be
-  listed in the claim policy `accepted_crit` array.
-- `azp`, `scope`, `scp`, and stricter multi-audience policy checks are available
-  in `lonejson_jwt_claim_policy`.
-- JWK `key_ops` is parsed and signature verification rejects keys that declare
-  operations without `verify`.
-- No JWKS cache eviction policy beyond one explicit cache object.
-- No concurrency synchronization inside the JWKS cache object.
-- No encrypted JWT/JWE support. JWE is intentionally out of the current
-  OIDC/JWT/JWK completion scope.
-
-Most of these omissions are intentional because lonejson is not meant to own
-application flow control. The core value is bounded parsing, explicit
-validation, structured failure classification, and facades that are easy for
-framework-specific code to compose.
-
-OAuth2 device authorization is a specific grant type for browser-constrained
-devices. It is distinct from lonejson's implemented token-flow state helper,
-which tracks bearer-token state for supported OAuth2/OIDC flows and decides
-whether to refresh, retry, or return a clear "cannot continue" state.
-
-The remaining encryption-specific JOSE target is JWE. It is intentionally not
-part of the current OIDC/JWT/JWK completion target.
-
-## Recommended Composition Patterns
-
-Machine-to-machine client credentials:
-
-1. Fetch and validate OIDC discovery metadata with
-   `lonejson_oidc_fetch_discovery` and a configured HTTP provider.
-2. Build a client-credentials body with
-   `lonejson_oauth2_client_credentials_body`.
-3. Exchange credentials with `lonejson_oauth2_client_credentials_request`, or
-   POST with caller-owned HTTP code and parse with
-   `lonejson_oauth2_token_response_parse_json`.
-4. Treat returned token material as secret credential material.
-
-Server-local machine-to-machine credentials:
-
-1. Generate a credential with `lonejson_m2m_credential_generate`. The helper
-   returns one-time cleartext `client_secret` and/or `api_key` values plus a
-   `record_json` object containing only salts, hashes, and the caller-supplied
-   opaque `claim` JSON.
-2. Store `record_json` in the caller-owned credential store under
-   `credentials[]`. The recommended persistence boundary is an admin CLI or
-   framework-owned storage layer that controls file permissions, locking,
-   encryption, and auditing.
-3. In a request handler, pass the HTTP `Authorization` header and store JSON to
-   `lonejson_m2m_verify_authorization`. By default it accepts both
-   `Authorization: Basic <base64(client_id:client_secret)>` and
-   `Authorization: Bearer <api_key>`. Set `allowed_auth_modes` to
-   `LONEJSON_M2M_AUTH_BASIC` or `LONEJSON_M2M_AUTH_BEARER` to opt out of one
-   mode.
-4. On success, use the returned `client_id` and opaque `claim` JSON to make the
-   application authorization decision. lonejson authenticates and returns
-   facts; it does not decide whether a method, tool, endpoint, tenant, or
-   operation is allowed.
-
-Server-local signup seed flow:
-
-1. An admin process calls `lonejson_m2m_signup_generate` with claim/metadata
-   JSON and optionally a public signup base URL. The helper returns a one-time
-   signup secret, a query string/URL suitable for email or another delivery
-   channel, and a store-ready signup record.
-2. Store the signup record under `signups[]`. Prefer exposing signup seeding
-   through an admin CLI or trusted automation path.
-3. The web handler asks the recipient for the required email address and calls
-   `lonejson_m2m_signup_complete` with the signup secret, optional signup ID,
-   email, and store JSON.
-4. On success, show the generated API key and/or client credentials once,
-   insert the returned credential record into `credentials[]`, and remove the
-   consumed signup record from `signups[]`. The helper returns the signup ID to
-   remove, but the caller owns the actual persistent store mutation.
-
-CLI or desktop authorization-code with PKCE:
-
-1. Fetch and validate OIDC discovery metadata with
-   `lonejson_oidc_fetch_discovery` and a configured HTTP provider.
-2. Generate PKCE with `lonejson_oidc_pkce_generate_with_runtime` on a runtime
-   with an auth provider. The OpenSSL easy path is available by initializing
-   that provider with `lonejson_auth_provider_init_openssl()`.
-3. Build the authorization URL with `lonejson_oidc_authorization_url`.
-4. Open the browser using caller-owned platform code.
-5. Receive callback query through caller-owned local HTTP code.
-6. Parse callback with `lonejson_oidc_authorization_callback_parse_query`.
-7. Exchange the code with `lonejson_oidc_authorization_code_token_request`, or
-   POST with caller-owned HTTP code and parse with
-   `lonejson_oauth2_token_response_parse_json`.
-8. Validate any ID token with the JWT/JWKS validation primitives.
-
-Server-side bearer validation:
-
-1. Fetch and validate OIDC discovery metadata with
-   `lonejson_oidc_fetch_discovery`.
-2. Refresh JWKS with `lonejson_oidc_jwks_cache_refresh`, or fetch with
-   caller-owned HTTP code and install with `lonejson_oidc_jwks_cache_update_json`.
-3. Keep the JWKS in `lonejson_oidc_jwks_cache`.
-4. For each request, call `lonejson_oidc_validate_bearer_token` before
-   application logic.
-5. Map `lonejson_auth_failure` to framework-specific HTTP responses.
-6. Refresh JWKS cache using caller-owned policy when validation fails due to
-   cache availability or key miss.
-
-## Release Notes For Consumers
-
-Consumers that do not define the auth feature gates see no auth API and should
-not need OpenSSL or curl headers.
-
-Consumers that define `LONEJSON_WITH_JWT` must build against a library compiled
-with JWT support. Signature trust APIs require an installed auth provider.
-
-Consumers that define `LONEJSON_WITH_OIDC` must build against a library
-compiled with OIDC and JWT support. Bearer validation requires an installed
-auth provider. HTTP discovery, JWKS retrieval, and token endpoint POST helpers
-require an installed HTTP provider.
-
-Parsing JWTs is never trust. Trust is established only by explicit validation:
-
-- signature validation with a selected key,
-- claim validation with an explicit policy,
-- or composed bearer validation against a fresh JWKS cache and claim policy.
+- HTTP clients/servers, browser launch, localhost callback listeners, framework
+  routing, TLS/proxy/redirect policy and durable credential storage are
+  application responsibilities.
+- Token-flow helpers support configurable refresh and bounded retry for the
+  supported flows; device authorization is not an implemented grant type.
+- HS256, Ed448 and encrypted JWT/JWE are not implemented. `alg: none` is rejected.
+- Certificate-backed JWK trust requires the OpenSSL provider. Other builds
+  parse certificate fields but do not validate their chains or thumbprints.
+- JWKS caches have no internal synchronization or eviction policy beyond the
+  explicit cache object. Callers own concurrency and cache replacement.

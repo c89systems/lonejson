@@ -11,4 +11,6 @@ lonejson_detect_native_bootlin_target(
   _lonejson_native_target_arch
   _lonejson_native_libc
   _lonejson_native_emulator)
-message("${_lonejson_native_target_id}")
+# stdout is a machine-readable target ID; diagnostics belong on stderr.
+execute_process(COMMAND "${CMAKE_COMMAND}" -E echo "${_lonejson_native_target_id}"
+  COMMAND_ERROR_IS_FATAL ANY)

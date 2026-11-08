@@ -92,6 +92,8 @@ endif()
 
 file(COPY "${LONEJSON_ROOT}/LICENSE" DESTINATION "${package_root}/share/doc/liblonejson")
 file(COPY "${LONEJSON_ROOT}/README.md" DESTINATION "${package_root}/share/doc/liblonejson")
+file(COPY "${LONEJSON_ROOT}/docs" DESTINATION "${package_root}/share/doc/liblonejson"
+  FILES_MATCHING PATTERN "*.md")
 
 set(dependencies_file "${package_root}/share/lonejson/dependencies.json")
 set(dependency_entries "")

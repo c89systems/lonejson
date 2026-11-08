@@ -41,6 +41,10 @@ static_files=(
   lua/lonejson/init.lua
 )
 
+for doc in "$repo_root"/docs/*.md; do
+  static_files+=("docs/${doc##*/}")
+done
+
 files=()
 include_scan_queue=()
 include_scan_seen=()

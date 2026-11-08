@@ -173,6 +173,16 @@ static int config_test_array_stream(void) {
     return 1;
   }
   lonejson_init(config_runtime(), &config_item_map, &item);
+  if (stream->set_record_reuse(stream, 1, &error) != LONEJSON_STATUS_OK) {
+    lonejson_array_stream_close(stream);
+    lonejson_cleanup(&config_item_map, &item);
+    return 1;
+  }
+  if (stream->error_fn(stream)->code != LONEJSON_STATUS_OK) {
+    stream->close(stream);
+    lonejson_cleanup(&config_item_map, &item);
+    return 1;
+  }
   result = lonejson_array_stream_next(stream, &config_item_map, &item, &error);
   if (result != LONEJSON_ARRAY_STREAM_ITEM || !config_expect_item(&item)) {
     lonejson_cleanup(&config_item_map, &item);
@@ -199,8 +209,11 @@ static int config_test_protocol_framing(void) {
   if (sse == NULL) {
     return 1;
   }
-  status = lonejson_sse_finish(sse, NULL, NULL, &error);
-  lonejson_sse_close(sse);
+  status = sse->push(sse, "data: ok\n\n", 10u, NULL, NULL, &error);
+  if (status == LONEJSON_STATUS_OK) {
+    status = sse->finish(sse, NULL, NULL, &error);
+  }
+  sse->close(sse);
   if (status != LONEJSON_STATUS_OK) {
     return 1;
   }
@@ -211,13 +224,12 @@ static int config_test_protocol_framing(void) {
   if (multipart == NULL) {
     return 1;
   }
-  status = lonejson_multipart_push(multipart, multipart_body,
-                                   sizeof(multipart_body) - 1u, &handler, NULL,
-                                   &error);
+  status = multipart->push(multipart, multipart_body,
+                           sizeof(multipart_body) - 1u, &handler, NULL, &error);
   if (status == LONEJSON_STATUS_OK) {
-    status = lonejson_multipart_finish(multipart, &handler, NULL, &error);
+    status = multipart->finish(multipart, &handler, NULL, &error);
   }
-  lonejson_multipart_close(multipart);
+  multipart->close(multipart);
   return status == LONEJSON_STATUS_OK ? 0 : 1;
 }
 #endif
@@ -250,6 +262,14 @@ static int config_test_short_aliases(void) {
 #endif
 
 int main(void) {
+#if defined(TEST_OMIT_PROTOCOL_FRAMING)
+  if (config_runtime()->sse_push_json != NULL ||
+      config_runtime()->sse_finish_json != NULL ||
+      config_runtime()->sse_push_json_value != NULL ||
+      config_runtime()->sse_finish_json_value != NULL) {
+    return 1;
+  }
+#endif
   if (config_test_parse_and_serialize() != 0) {
     return 1;
   }

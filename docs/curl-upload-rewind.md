@@ -20,7 +20,9 @@ after partial output, and after EOF, and can be repeated. Maps, values, source
 contents, and allocator context must remain alive and stable until cleanup.
 The runtime handle need not remain alive after successful initialization.
 
-The seek callback accepts only `(0, SEEK_SET)`. Unsupported offsets/origins and
+Use the receiver `seek_callback` for direct calls on an initialized adapter;
+install the free callback in libcurl. The seek callback accepts only
+`(0, SEEK_SET)`. Unsupported offsets/origins and
 non-rewindable documents return `CURL_SEEKFUNC_CANTSEEK` without altering the
 generator or consuming input. Invalid/inactive adapters and restart failures
 return `CURL_SEEKFUNC_FAIL`. The direct rewind operation returns
@@ -28,18 +30,6 @@ return `CURL_SEEKFUNC_FAIL`. The direct rewind operation returns
 Restart failures preserve diagnostics in `generator.error`; allocation failure
 leaves the old serialization cursor intact. Sources are opened lazily, so later
 source failures abort the read callback and preserve its diagnostic.
-
-## Implementation
-
-Retain the original map and source in private mapped-generator state. Reuse the
-serializer's document-wide replayability traversal. Construct a fresh bounded
-generator with the saved options, then clean up the old generator and replace
-it. Copy allocator callbacks into the fresh state so restart never borrows the
-old state's allocator storage. Keep the curl result mapping in the curl adapter.
-Expose matching short aliases and document example callback registration.
-
-The two new receiver methods change the public upload struct layout. Advance
-the shared-library ABI from 25 (release v0.42.0) to 26.
 
 ## Verification
 

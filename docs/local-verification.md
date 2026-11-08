@@ -1,15 +1,8 @@
-# Local Verification
+# Local verification
 
-`make prerelease` runs ordinary proof and the binary release matrix incrementally.
-`make release` first validates a clean owning checkout attached to its default
-branch, a verified commit signature, exactly one lightweight `vX.Y.Z` tag on
-HEAD, and no candidate override, cleans generated
-state, and runs that proof graph. It then reconstructs the all-component source
-archive and verifies the complete checksum manifest. Source reconstruction stays
-out of the incremental binary matrix. The extracted archive runs host C and Lua
-tests and builds its Lua release artifacts. Ordinary source-package checks use
-its `VERSION` and `RELEASE_MANIFEST`, even inside a Git checkout, without changing
-the parent checkout's tags.
+This is the detailed lifecycle contract. See [building and verification](development.md)
+for everyday commands and local service operation, and [release artifacts](releasing.md)
+for artifact names, release identity and the maintainer workflow.
 
 Make indexes commands, Bash sequences preparation, CMake owns build/install
 dependencies, and CTest owns test execution and results. Python is confined to
@@ -31,19 +24,18 @@ Lua suite, then checks formatting. It reuses configured builds and does not
 stage examples or run the repository-wide policy fixtures. Run the matching
 lifecycle or packaging fixtures separately when changing those surfaces.
 
+The ABI portion is also available as `make abi-check`. It checks header/SONAME
+agreement and reports downstream rebuild order if the ABI differs from the
+latest local stable release tag. Missing local release history is reported as
+unknown. This advisory step does not verify downstream pins or require their
+checkouts, and it does not participate in `release` or `release-matrix`.
+See the [known downstream graph](development.md#downstream-abi-coordination) and
+the curated report in `cmake/report_downstream_abi.cmake`.
+
 `make lifecycle-version-contract` is read-only. It checks final release identity
 before any cleanup or producer runs. CTest uses disposable Git command fixtures
 to test tag identity and failures without changing checkout refs. Candidate
 version overrides remain available to preparation commands.
-
-Implement and verify on one development branch. For an actual release, squash
-the verified change onto the local default branch before requesting final
-amendment/signing. Set `origin/HEAD` to the authoritative default branch. Sign
-that commit, add its exact local lightweight tag, and run the clean release
-gate. Keep remote branch and tag refs unchanged until all required local tests
-and final artifact checks pass. Hosted CI never supplies release proof or
-artifacts; Darwin proof uses local osxcross. A failed release stops for repair
-in a separately authorized iteration.
 
 Temporary test and verifier workspaces live under `build/`, resolved from each
 script's physical repository location. `make format-check` checks all maintained
@@ -61,11 +53,10 @@ Bootlin for Linux targets; Apple SDKs are never downloaded by the project.
 `make build-release` prepares dependencies only for `RELEASE_BUILD_PRESETS`.
 Without a prepared osxcross collection, the default selection builds the six
 Linux targets without attempting Darwin preparation.
-The native preset toolchain is now `cmake/toolchains/native.cmake`; refresh an
-existing build cache with `cmake --fresh --preset <preset>` after updating.
+Native presets use `cmake/toolchains/native.cmake`.
 
-Linux collections are pinned in `scripts/cpkt-toolchains.sh` to Bootlin stable
-`2026.08-1` (GCC 15.3.0), including archive SHA-256 checksums. Updates replace
+Linux collections are pinned in `tools/lifecycle/scripts/cpkt-toolchains.sh`
+to Bootlin stable `2026.08-1` (GCC 15.3.0), including archive SHA-256 checksums. Updates replace
 the complete collection, not just the compiler. AFL++ cache identities include
 the Bootlin collection so upgrades cannot reuse an incompatible GCC plugin.
 Standalone curl examples, LuaRocks bindings (including source rocks), and
@@ -76,9 +67,10 @@ After a Bootlin upgrade, configure existing build directories with
 collection cache because CMake's automatic compiler-change restart can discard
 preset feature settings and silently reduce test coverage.
 
-CMake selects the pinned Bootlin collection matching the native Linux host's
-processor and libc for debug, host, and Lua workflows. Explicit Linux target
-toolchain files inspect prepared tools without acquisition, including compiler
+Native Linux workflows require an x86_64 glibc host because the pinned Bootlin
+compiler executables are x86_64 glibc binaries. Debug, host and Lua workflows
+select that native collection; other Linux targets run through QEMU. Explicit
+Linux target toolchain files inspect prepared tools without acquisition, including compiler
 probes. Make entrypoints prepare their dependencies before configuring; direct
 CMake users must first run `make deps-host` or the selected `make deps-<target>`.
 To warm every Linux
@@ -132,9 +124,7 @@ discovery check, run `clangd --check=src/lonejson.c` and
 `clangd --check=src/lua/lonejson_lua.c` without database or driver overrides.
 Open `include/lonejson.h` in the ordinary clangd editor and verify empty
 diagnostics and API symbol discovery. Editor warnings remain warnings;
-builds still enforce `-Werror`. Refresh
-old configurations with `cmake --fresh --preset <preset>` after this migration:
-the provider and global cache paths changed.
+builds still enforce `-Werror`.
 
 Every Linux native debug, host, and release build uses a single pinned Bootlin collection:
 its GCC driver, GNU linker, binutils/debug tools, libc sysroot, and target
@@ -282,15 +272,10 @@ its Lua correctness/fuzz tests through a target-built embedding runner. Host
 Lua and LuaRocks provide tooling. Compiler and supported linker warnings are
 errors in Debug and Release configurations.
 
-`make lua-env` prints LuaRocks search paths and the installed SDK's
-`LONEJSON_LIBDIR`; it leaves loader selection to the target runner. To execute
-a Lua script against the installed rock on Linux, use:
-
-```sh
-scripts/run_installed_lua.sh "$PWD/build/luarocks" "$PWD/build/lua-sdk/lib" lua path/to/script.lua
-```
-
-LuaRocks builds keep their tool scratch beneath `build/` too.
+[Lua setup and examples](lua.md) documents the installed-rock runner and loader
+selection. `make lua-env` prints LuaRocks search paths and `LONEJSON_LIBDIR`;
+it does not select the target loader. LuaRocks builds keep their tool scratch
+beneath `build/` too.
 
 
 Darwin cross builds select the newest complete installed `arm64-apple-darwin25.x`

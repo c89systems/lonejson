@@ -710,6 +710,7 @@ static void test_public_dynamic_record_helpers(void) {
   test_person person;
   test_nullable_primitives_doc nullable_doc;
   test_two_alloc_string_doc doc;
+  test_conditional_doc *arrays;
   test_item *item;
   char buffer[512];
   size_t needed = 0u;
@@ -725,38 +726,38 @@ static void test_public_dynamic_record_helpers(void) {
   lonejson_init(runtime, &test_person_map, &person);
   EXPECT(!lonejson_field_has_presence(&test_person_map.fields[0]));
 
-  status = lonejson_record_assign_string(runtime, &test_person_map, &person,
+  status = runtime->record_assign_string(runtime, &test_person_map, &person,
                                          &test_person_map.fields[0], "Dynamic",
                                          7u, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
-  status = lonejson_record_assign_string(runtime, &test_person_map, &person,
+  status = runtime->record_assign_string(runtime, &test_person_map, &person,
                                          &test_person_map.fields[1], "dyn", 3u,
                                          &error);
   EXPECT(status == LONEJSON_STATUS_OK);
   person.age = 12;
   person.score = 1.5;
   person.active = true;
-  status = lonejson_record_assign_string(
+  status = runtime->record_assign_string(
       runtime, &test_address_map, &person.address, &test_address_map.fields[0],
       "Visby", 5u, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
   person.address.zip = 62157;
 
-  status = lonejson_record_array_append_i64(runtime, &test_person_map, &person,
+  status = runtime->record_array_append_i64(runtime, &test_person_map, &person,
                                             &test_person_map.fields[6],
                                             &person.lucky_numbers, 7, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
-  status = lonejson_record_array_append_string(
+  status = runtime->record_array_append_string(
       runtime, &test_person_map, &person, &test_person_map.fields[7],
       &person.tags, "blue", 4u, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
-  item = (test_item *)lonejson_record_object_array_append_slot(
+  item = (test_item *)runtime->record_object_array_append_slot(
       runtime, &test_person_map, &person, &test_person_map.fields[8],
       &person.items, &error);
   EXPECT(item != NULL);
   if (item != NULL) {
     item->id = 9;
-    status = lonejson_record_assign_string(runtime, &test_item_map, item,
+    status = runtime->record_assign_string(runtime, &test_item_map, item,
                                            &test_item_map.fields[1], "nine", 4u,
                                            &error);
     EXPECT(status == LONEJSON_STATUS_OK);
@@ -785,23 +786,23 @@ static void test_public_dynamic_record_helpers(void) {
   nullable_doc.child.priority = 3;
   nullable_doc.child.has_priority = 1;
 
-  status = lonejson_record_assign_null(
+  status = runtime->record_assign_null(
       runtime, &test_nullable_primitives_map, &nullable_doc,
       &test_nullable_primitives_map.fields[0], &error);
   EXPECT(status == LONEJSON_STATUS_OK);
-  status = lonejson_record_assign_null(
+  status = runtime->record_assign_null(
       runtime, &test_nullable_primitives_map, &nullable_doc,
       &test_nullable_primitives_map.fields[1], &error);
   EXPECT(status == LONEJSON_STATUS_OK);
-  status = lonejson_record_assign_null(
+  status = runtime->record_assign_null(
       runtime, &test_nullable_primitives_map, &nullable_doc,
       &test_nullable_primitives_map.fields[2], &error);
   EXPECT(status == LONEJSON_STATUS_OK);
-  status = lonejson_record_assign_null(
+  status = runtime->record_assign_null(
       runtime, &test_nullable_primitives_map, &nullable_doc,
       &test_nullable_primitives_map.fields[3], &error);
   EXPECT(status == LONEJSON_STATUS_OK);
-  status = lonejson_record_assign_null(
+  status = runtime->record_assign_null(
       runtime, &test_nullable_child_map, &nullable_doc.child,
       &test_nullable_child_map.fields[0], &error);
   EXPECT(status == LONEJSON_STATUS_OK);
@@ -823,6 +824,35 @@ static void test_public_dynamic_record_helpers(void) {
   EXPECT(strcmp(buffer, "{\"required_count\":9,\"child\":{}}") == 0);
   lonejson_cleanup(&test_nullable_primitives_map, &nullable_doc);
 
+  arrays = (test_conditional_doc *)malloc(sizeof(*arrays));
+  EXPECT(arrays != NULL);
+  if (arrays != NULL) {
+    runtime->init(runtime, &test_conditional_doc_map, arrays);
+    EXPECT(runtime->record_array_append_u64(
+               runtime, &test_conditional_doc_map, arrays,
+               &test_conditional_doc_map.fields[5], &arrays->uints, 42u,
+               &error) == LONEJSON_STATUS_OK);
+    EXPECT(runtime->record_array_append_f64(
+               runtime, &test_conditional_doc_map, arrays,
+               &test_conditional_doc_map.fields[6], &arrays->nums, 1.5,
+               &error) == LONEJSON_STATUS_OK);
+    EXPECT(runtime->record_array_append_bool(
+               runtime, &test_conditional_doc_map, arrays,
+               &test_conditional_doc_map.fields[7], &arrays->bools, 1,
+               &error) == LONEJSON_STATUS_OK);
+    EXPECT(arrays->uints.count == 1u && arrays->uints.items[0] == 42u);
+    EXPECT(arrays->nums.count == 1u && arrays->nums.items[0] == 1.5);
+    EXPECT(arrays->bools.count == 1u && arrays->bools.items[0]);
+    EXPECT(runtime->serialize_buffer(runtime, &test_conditional_doc_map, arrays,
+                                     buffer, sizeof(buffer), &needed,
+                                     &error) == LONEJSON_STATUS_OK);
+    EXPECT(strstr(buffer, "\"uints\":[42]") != NULL);
+    EXPECT(strstr(buffer, "\"nums\":[1.5]") != NULL);
+    EXPECT(strstr(buffer, "\"bools\":[true]") != NULL);
+    runtime->cleanup(runtime, &test_conditional_doc_map, arrays);
+    free(arrays);
+  }
+
   lonejson_free(runtime);
 
   runtime = lonejson_new(NULL, &error);
@@ -831,7 +861,7 @@ static void test_public_dynamic_record_helpers(void) {
     return;
   }
   lonejson_init(runtime, &test_two_alloc_string_doc_map, &doc);
-  status = lonejson_record_assign_string(
+  status = runtime->record_assign_string(
       runtime, &test_two_alloc_string_doc_map, &doc,
       &test_two_alloc_string_doc_map.fields[0], "aaaaaaaa", 8u, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
@@ -849,13 +879,13 @@ static void test_public_dynamic_record_helpers(void) {
     return;
   }
   lonejson_init(limited_runtime, &test_two_alloc_string_doc_map, &doc);
-  status = lonejson_record_assign_string(
+  status = limited_runtime->record_assign_string(
       limited_runtime, &test_two_alloc_string_doc_map, &doc,
       &test_two_alloc_string_doc_map.fields[0], "aaaaaaaa", 8u, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
   EXPECT(doc.first != NULL);
   EXPECT(lonejson__owned_size(doc.first) == first_alloc_size);
-  status = lonejson_record_assign_string(
+  status = limited_runtime->record_assign_string(
       limited_runtime, &test_two_alloc_string_doc_map, &doc,
       &test_two_alloc_string_doc_map.fields[1], "bbbbbbbb", 8u, &error);
   EXPECT(status == LONEJSON_STATUS_OVERFLOW);
@@ -1092,7 +1122,7 @@ static void test_receiver_methods_dispatch_on_public_handles(void) {
   char path[] = LONEJSON_SOURCE_DIR "/build/test-tmp/lonejson-methods-XXXXXX";
   int fd;
   const char *framed =
-      "{\"id\":\"evt-1\",\"ok\":true}{\"id\":\"evt-2\",\"ok\":false}";
+      "{\"id\":\"evt-1\",\"ok\":true}{\"id\":\"evt-2\",\"ok\":false}!";
   const char *array_json = "[{\"id\":\"evt-1\",\"ok\":true}]";
   lonejson_stream_result stream_result;
   lonejson_array_stream_result array_result;
@@ -1332,8 +1362,8 @@ static void test_receiver_methods_dispatch_on_public_handles(void) {
   EXPECT(generator.read != NULL);
   EXPECT(generator.cleanup != NULL);
   out_len = 0u;
-  EXPECT(lonejson_generator_measure(lj, &test_event_map, &event, &out_len,
-                                    &error) == LONEJSON_STATUS_OK);
+  EXPECT(lj->generator_measure(lj, &test_event_map, &event, &out_len, &error) ==
+         LONEJSON_STATUS_OK);
   memset(&sink, 0, sizeof(sink));
   memset(sink_buffer, 0, sizeof(sink_buffer));
   sink.buffer = sink_buffer;
@@ -1438,6 +1468,10 @@ static void test_receiver_methods_dispatch_on_public_handles(void) {
     EXPECT(stream_result == LONEJSON_STREAM_OBJECT);
     EXPECT(strcmp(event.id, "evt-1") == 0);
     EXPECT(event.ok == true);
+    EXPECT(stream->error_fn(stream)->code == LONEJSON_STATUS_OK);
+    EXPECT(stream->next(stream, &event, &error) == LONEJSON_STREAM_OBJECT);
+    EXPECT(stream->next(stream, &event, &error) == LONEJSON_STREAM_ERROR);
+    EXPECT(stream->error_fn(stream)->code == LONEJSON_STATUS_INVALID_JSON);
     stream->close(stream);
   }
 
@@ -1456,10 +1490,15 @@ static void test_receiver_methods_dispatch_on_public_handles(void) {
     EXPECT(array_stream->push_string_items != NULL);
     EXPECT(array_stream->finish_string_items != NULL);
     EXPECT(array_stream->close != NULL);
+    EXPECT(array_stream->set_record_reuse(array_stream, 1, &error) ==
+           LONEJSON_STATUS_OK);
     memset(&event, 0, sizeof(event));
     array_result =
         array_stream->next(array_stream, &test_event_map, &event, &error);
     EXPECT(array_result == LONEJSON_ARRAY_STREAM_ITEM);
+    EXPECT(array_stream->error_fn(array_stream)->code == LONEJSON_STATUS_OK);
+    EXPECT(array_stream->set_record_reuse(array_stream, 0, &error) ==
+           LONEJSON_STATUS_INVALID_ARGUMENT);
     EXPECT(strcmp(event.id, "evt-1") == 0);
     EXPECT(event.ok == true);
     array_stream->close(array_stream);

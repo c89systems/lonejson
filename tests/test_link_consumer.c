@@ -107,6 +107,193 @@ static lonejson_status consumer_rewrite_item_cb(
   return LONEJSON_STATUS_OK;
 }
 
+typedef struct consumer_protocol_observation {
+  char data[16];
+  size_t len;
+  int count;
+  int cancel;
+} consumer_protocol_observation;
+
+static lonejson_status consumer_protocol_bytes(void *user, const void *bytes,
+                                               size_t len,
+                                               lonejson_error *error) {
+  consumer_protocol_observation *seen = (consumer_protocol_observation *)user;
+  (void)error;
+  if (seen->cancel)
+    return LONEJSON_STATUS_IO_ERROR;
+  if (len >= sizeof(seen->data) - seen->len)
+    return LONEJSON_STATUS_OVERFLOW;
+  memcpy(seen->data + seen->len, bytes, len);
+  seen->len += len;
+  seen->data[seen->len] = '\0';
+  return LONEJSON_STATUS_OK;
+}
+
+static lonejson_status consumer_protocol_mapped(void *user,
+                                                const lonejson_sse_event *event,
+                                                void *dst,
+                                                lonejson_error *error) {
+  consumer_protocol_observation *seen = (consumer_protocol_observation *)user;
+  consumer_person *person = (consumer_person *)dst;
+  (void)event;
+  (void)error;
+  ++seen->count;
+  return strcmp(person->name, "Ada") == 0 && person->age == 7 && person->active
+             ? LONEJSON_STATUS_OK
+             : LONEJSON_STATUS_TYPE_MISMATCH;
+}
+
+static lonejson_status consumer_protocol_value(void *user,
+                                               const lonejson_sse_event *event,
+                                               lonejson_json_value *value,
+                                               lonejson_error *error) {
+  consumer_protocol_observation *seen = (consumer_protocol_observation *)user;
+  (void)event;
+  ++seen->count;
+  return lonejson_json_value_write_to_sink(value, consumer_protocol_bytes, user,
+                                           error);
+}
+
+static int consumer_protocol_receivers(void) {
+  static const char raw[] = "data: abc\n\n";
+  static const char mapped[] =
+      "data: {\"name\":\"Ada\",\"age\":7,\"active\":true}";
+  static const char part[] = "--b\r\nContent-Length: 3\r\n\r\nabc\r\n--b--\r\n";
+  lonejson_sse *sse;
+  lonejson_multipart *multipart;
+  lonejson_sse_handler sse_handler;
+  lonejson_multipart_handler part_handler;
+  lonejson_json_value *value;
+  lonejson_error error;
+  consumer_protocol_observation seen;
+  consumer_person person;
+  size_t i;
+  int valid = 1;
+#define CONSUMER_PROTOCOL_CHECK(condition)                                     \
+  do {                                                                         \
+    if (!(condition)) {                                                        \
+      fprintf(stderr, "protocol receiver check failed at line %d: %s\n",       \
+              __LINE__, #condition);                                           \
+      valid = 0;                                                               \
+    }                                                                          \
+  } while (0)
+  memset(&seen, 0, sizeof(seen));
+  memset(&sse_handler, 0, sizeof(sse_handler));
+  sse_handler.data_chunk = consumer_protocol_bytes;
+  sse = lonejson_sse_open(NULL, &error);
+  CONSUMER_PROTOCOL_CHECK(sse != NULL);
+  if (sse != NULL) {
+    for (i = 0u; i < sizeof(raw) - 2u; ++i) {
+      CONSUMER_PROTOCOL_CHECK(sse->push(sse, raw + i, 1u, &sse_handler, &seen,
+                                        &error) == LONEJSON_STATUS_OK);
+    }
+    CONSUMER_PROTOCOL_CHECK(strcmp(seen.data, "abc") == 0);
+    CONSUMER_PROTOCOL_CHECK(sse->finish(sse, &sse_handler, &seen, &error) ==
+                            LONEJSON_STATUS_OK);
+    CONSUMER_PROTOCOL_CHECK(
+        sse->push(sse, raw, 1u, &sse_handler, &seen, &error) ==
+        LONEJSON_STATUS_INVALID_ARGUMENT);
+    sse->close(sse);
+  }
+  seen.cancel = 1;
+  sse = lonejson_sse_open(NULL, &error);
+  CONSUMER_PROTOCOL_CHECK(sse != NULL);
+  if (sse != NULL) {
+    CONSUMER_PROTOCOL_CHECK(
+        sse->push(sse, raw, sizeof(raw) - 1u, &sse_handler, &seen, &error) ==
+        LONEJSON_STATUS_CALLBACK_FAILED);
+    sse->close(sse);
+  }
+  memset(&seen, 0, sizeof(seen));
+  lonejson_init(consumer_runtime(), &consumer_person_map, &person);
+  sse = lonejson_sse_open(NULL, &error);
+  CONSUMER_PROTOCOL_CHECK(sse != NULL);
+  if (sse != NULL) {
+    for (i = 0u; i < sizeof(mapped) - 1u; ++i) {
+      CONSUMER_PROTOCOL_CHECK(
+          sse->push_json(sse, consumer_runtime(), &consumer_person_map, &person,
+                         mapped + i, 1u, NULL, consumer_protocol_mapped, &seen,
+                         &error) == LONEJSON_STATUS_OK);
+    }
+    CONSUMER_PROTOCOL_CHECK(seen.count == 0);
+    CONSUMER_PROTOCOL_CHECK(
+        sse->finish_json(sse, consumer_runtime(), &consumer_person_map, &person,
+                         NULL, consumer_protocol_mapped, &seen,
+                         &error) == LONEJSON_STATUS_OK);
+    CONSUMER_PROTOCOL_CHECK(seen.count == 1);
+    sse->close(sse);
+  }
+  lonejson_cleanup(&consumer_person_map, &person);
+  memset(&seen, 0, sizeof(seen));
+  value = (lonejson_json_value *)malloc(sizeof(*value));
+  CONSUMER_PROTOCOL_CHECK(value != NULL);
+  if (value != NULL) {
+    lonejson_json_value_init(consumer_runtime(), value);
+    CONSUMER_PROTOCOL_CHECK(lonejson_json_value_enable_parse_capture(
+                                value, &error) == LONEJSON_STATUS_OK);
+    sse = lonejson_sse_open(NULL, &error);
+    CONSUMER_PROTOCOL_CHECK(sse != NULL);
+    if (sse != NULL) {
+      CONSUMER_PROTOCOL_CHECK(
+          sse->push_json_value(sse, consumer_runtime(), value, "data: true",
+                               10u, NULL, consumer_protocol_value, &seen,
+                               &error) == LONEJSON_STATUS_OK);
+      CONSUMER_PROTOCOL_CHECK(
+          sse->finish_json_value(sse, consumer_runtime(), value, NULL,
+                                 consumer_protocol_value, &seen,
+                                 &error) == LONEJSON_STATUS_OK);
+      CONSUMER_PROTOCOL_CHECK(seen.count == 1 &&
+                              strcmp(seen.data, "true") == 0);
+      sse->close(sse);
+    }
+    lonejson_json_value_cleanup(value);
+    free(value);
+  }
+  memset(&part_handler, 0, sizeof(part_handler));
+  part_handler.part_data = consumer_protocol_bytes;
+  for (i = 0u; i < 2u; ++i) {
+    size_t offset;
+    size_t prefix = (size_t)(strstr(part, "abc") + 3 - part);
+    memset(&seen, 0, sizeof(seen));
+    seen.cancel = (int)i;
+    multipart =
+        lonejson_multipart_open("multipart/mixed; boundary=b", NULL, &error);
+    CONSUMER_PROTOCOL_CHECK(multipart != NULL);
+    if (multipart != NULL) {
+      if (seen.cancel) {
+        CONSUMER_PROTOCOL_CHECK(
+            multipart->push(multipart, part, sizeof(part) - 1u, &part_handler,
+                            &seen, &error) == LONEJSON_STATUS_CALLBACK_FAILED);
+      } else {
+        for (offset = 0u; offset < sizeof(part) - 1u; ++offset) {
+          CONSUMER_PROTOCOL_CHECK(
+              multipart->push(multipart, part + offset, 1u, &part_handler,
+                              &seen, &error) == LONEJSON_STATUS_OK);
+          if (offset + 1u == prefix)
+            CONSUMER_PROTOCOL_CHECK(strcmp(seen.data, "abc") == 0);
+        }
+        CONSUMER_PROTOCOL_CHECK(
+            multipart->finish(multipart, &part_handler, &seen, &error) ==
+            LONEJSON_STATUS_OK);
+        CONSUMER_PROTOCOL_CHECK(multipart->push(multipart, NULL, 0u,
+                                                &part_handler, &seen, &error) ==
+                                LONEJSON_STATUS_INVALID_ARGUMENT);
+      }
+      multipart->close(multipart);
+    }
+  }
+  multipart =
+      lonejson_multipart_open("multipart/mixed; boundary=b", NULL, &error);
+  CONSUMER_PROTOCOL_CHECK(multipart != NULL);
+  if (multipart != NULL) {
+    CONSUMER_PROTOCOL_CHECK(multipart->finish(multipart, NULL, NULL, &error) ==
+                            LONEJSON_STATUS_INVALID_JSON);
+    multipart->close(multipart);
+  }
+#undef CONSUMER_PROTOCOL_CHECK
+  return valid ? 0 : 1;
+}
+
 int main(void) {
   static const char json[] =
       "{\"person\":{\"name\":\"Alice\",\"age\":37,\"active\":true},"
@@ -137,6 +324,26 @@ int main(void) {
 
   lonejson_init(consumer_runtime(), &consumer_log_map, &log_record);
   lonejson_error_init(&error);
+  if (consumer_protocol_receivers() != 0)
+    return 1;
+  if (lonejson_array_stream_set_record_reuse(NULL, 1, &error) !=
+      LONEJSON_STATUS_INVALID_ARGUMENT) {
+    return 1;
+  }
+  {
+    lonejson_array_stream *stream = consumer_runtime()->array_stream_open_push(
+        consumer_runtime(), "", &error);
+    if (stream == NULL) {
+      return 1;
+    }
+    status = stream->set_record_reuse(stream, 1, &error);
+    if (status != LONEJSON_STATUS_OK ||
+        stream->error_fn(stream)->code != LONEJSON_STATUS_OK) {
+      stream->close(stream);
+      return 1;
+    }
+    stream->close(stream);
+  }
 
   status = lonejson_parse_cstr(consumer_runtime(), &consumer_log_map,
                                &log_record, json, &error);

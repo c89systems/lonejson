@@ -63,16 +63,14 @@ make bench-gate
 make lua-bench-gate
 ```
 
-The Lua benchmark harness is currently noisy enough that its compare output
-should not be treated as a stable baseline contract yet. I will revisit the
-harness before using Lua benchmark deltas as a release gate or as an
-implementation signal.
+Broad gates (`test-all`, `prerelease` and `release`) run `bench-check` against
+frozen C and Lua baselines for the current host, with an explicit skip when a
+baseline is absent. See [performance logs](../perflogs/README.md) for comparison
+rules and baseline provenance.
 
-To use the locally built rock in a shell session:
-
-```sh
-eval "$(luarocks path --tree build/luarocks)"
-```
+Use the [Lua setup guide](../docs/lua.md) to run scripts against the installed
+rock. On Linux the supported runner selects the pinned target runtime; LuaRocks
+search paths alone do not select a compatible loader.
 
 Release packaging ships the Lua binding sources in these artifacts:
 
@@ -164,7 +162,8 @@ if auth.authorized then
 end
 ```
 
-The top-level README and `docs/auth-implementation.md` describe the complete C
+The [authentication guide](../docs/authentication.md) and
+[API reference](../docs/auth-implementation.md) describe the complete C
 auth surface, policy fields, e2e coverage, and deliberate non-goals.
 
 ## The schema DSL
@@ -596,7 +595,7 @@ Useful files in this repository:
 
 - [`examples/lua_binding.lua`](../examples/lua_binding.lua)
 - [`tests/test_lua.lua`](../tests/test_lua.lua)
-- [`perflogs/lua/README.md`](../perflogs/lua/README.md)
+- [Performance logs](../perflogs/README.md)
 - [`README.md`](../README.md)
 
 Those files together cover the binding from three angles: example usage,

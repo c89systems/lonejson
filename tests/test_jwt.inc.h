@@ -1755,9 +1755,9 @@ static void test_oidc_jwks_cache_curl_adapter(void) {
   lonejson_oidc_jwks_cache_init(&cache);
   memset(&parse, 0, sizeof(parse));
   policy = test_oidc_jwks_cache_policy();
-  EXPECT(lonejson_oidc_jwks_cache_parse_init(&parse, test_default_runtime(),
-                                             &cache,
-                                             &policy) == LONEJSON_STATUS_OK);
+  EXPECT(test_default_runtime()->oidc_jwks_cache_parse_init(
+             test_default_runtime(), &parse, &cache, &policy) ==
+         LONEJSON_STATUS_OK);
   wrote = lonejson_oidc_jwks_cache_write_callback((char *)chunk0, 1u,
                                                   strlen(chunk0), &parse);
   EXPECT(wrote == strlen(chunk0));
@@ -2604,20 +2604,20 @@ static void test_oauth2_token_response_failures(void) {
   lonejson_oauth2_token_response_cleanup(&response);
 
   lonejson_oauth2_introspection_response_init(&introspection);
-  EXPECT(lonejson_oauth2_introspection_response_parse_json(
+  EXPECT(test_default_runtime()->oauth2_introspection_response_parse_json(
              test_default_runtime(), "{\"scope\":\"read\"}",
              strlen("{\"scope\":\"read\"}"), 0u, &introspection,
              &error) == LONEJSON_STATUS_INVALID_JSON);
   EXPECT(introspection.scope == NULL);
-  EXPECT(lonejson_oauth2_introspection_response_parse_json(
+  EXPECT(test_default_runtime()->oauth2_introspection_response_parse_json(
              test_default_runtime(), "{\"active\":\"true\"}",
              strlen("{\"active\":\"true\"}"), 0u, &introspection,
              &error) == LONEJSON_STATUS_TYPE_MISMATCH);
-  EXPECT(lonejson_oauth2_introspection_response_parse_json(
+  EXPECT(test_default_runtime()->oauth2_introspection_response_parse_json(
              test_default_runtime(), "{\"active\":true}",
              strlen("{\"active\":true}"), 8u, &introspection,
              &error) == LONEJSON_STATUS_OVERFLOW);
-  EXPECT(lonejson_oauth2_introspection_response_parse_json(
+  EXPECT(test_default_runtime()->oauth2_introspection_response_parse_json(
              test_default_runtime(), "{\"active\":true,\"aud\":[\"api\"]}",
              strlen("{\"active\":true,\"aud\":[\"api\"]}"), 0u, &introspection,
              &error) == LONEJSON_STATUS_OK);
@@ -2627,16 +2627,26 @@ static void test_oauth2_token_response_failures(void) {
   lonejson_oauth2_introspection_response_cleanup(&introspection);
 
   lonejson_oidc_userinfo_response_init(&userinfo);
-  EXPECT(lonejson_oidc_userinfo_response_parse_json(
+  EXPECT(test_default_runtime()->oidc_userinfo_response_parse_json(
              test_default_runtime(), "{\"sub\":\"sub\"}",
              strlen("{\"sub\":\"sub\"}"), 8u, &userinfo,
              &error) == LONEJSON_STATUS_OVERFLOW);
   EXPECT(userinfo.json == NULL);
-  EXPECT(lonejson_oidc_userinfo_response_parse_json(
+  EXPECT(test_default_runtime()->oidc_userinfo_response_parse_json(
              test_default_runtime(), "{\"email_verified\":\"yes\"}",
              strlen("{\"email_verified\":\"yes\"}"), 0u, &userinfo,
              &error) == LONEJSON_STATUS_TYPE_MISMATCH);
   EXPECT(userinfo.json == NULL);
+  EXPECT(test_default_runtime()->oidc_userinfo_response_parse_json(
+             test_default_runtime(),
+             "{\"sub\":\"subject\",\"email_verified\":true}",
+             strlen("{\"sub\":\"subject\",\"email_verified\":true}"), 0u,
+             &userinfo, &error) == LONEJSON_STATUS_OK);
+  EXPECT(userinfo.sub != NULL);
+  if (userinfo.sub != NULL) {
+    EXPECT(strcmp(userinfo.sub, "subject") == 0);
+  }
+  EXPECT(userinfo.has_email_verified && userinfo.email_verified);
   lonejson_oidc_userinfo_response_cleanup(&userinfo);
 }
 

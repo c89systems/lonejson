@@ -108,66 +108,15 @@ make test-m2m-e2e
 
 ## Lua binding
 
-Build and install the Lua module into the local LuaRocks tree:
+Build with `make lua-rock`, then follow the [Lua setup guide](../docs/lua.md#run-the-examples)
+to run these examples against the installed SDK on Linux or Darwin.
 
-```sh
-make lua-rock
-```
+| Example | Demonstrates |
+| --- | --- |
+| [`lua_binding.lua`](lua_binding.lua) | Schema DSL, reusable records, streams, rewrites, `json_value` and spool-backed fields. |
+| [`lua_nullable.lua`](lua_nullable.lua) | Nullable primitive fields and omission of `nil`/`lj.json_null` values on encode. |
+| [`lua_json_value_nested.lua`](lua_json_value_nested.lua) | Nested arbitrary JSON values with record reuse. |
+| [`lua_json_value_object_array.lua`](lua_json_value_object_array.lua) | Arbitrary JSON in object-array elements; omitted arrays persist and present arrays replace prior contents. |
 
-Then run the main Lua example:
-
-```sh
-eval "$(luarocks path --tree build/luarocks)" && lua examples/lua_binding.lua
-```
-
-That example shows the schema DSL, reusable record decoding, object-framed
-stream parsing, selected-array stream parsing, selected-array rewrites, native
-`json_value` handling, and spool-backed text/byte fields.
-
-Current runtime defaults to keep in mind while reading the examples:
-
-* `STRING_ALLOC` fields are capped at `128 KiB` per field unless
-  `lonejson.new({...})` or `lonejson_new(&config, ...)` raises
-  `max_dynamic_string_bytes` or sets it to `0`.
-* lonejson-owned live parse heap is capped at `1 MiB` per runtime unless
-  `max_alloc_bytes` is raised or set to `0`.
-* reused non-empty `STRING_FIXED` fields under
-  `clear_destination_by_default = false` stage replacement bytes before
-  commit; provide `fixed_string_scratch` in the runtime config to keep that
-  path allocation-free, or let the temporary staging compete under
-  `max_alloc_bytes`.
-* the Lua binding exposes the same scratch surface as
-  `lonejson.fixed_string_scratch(size)` in `lonejson.new({...})`.
-* default spool-backed fields keep `64 KiB` in memory and cap total payload at
-  `10 MiB` unless a field is mapped to a different named spool class in the
-  runtime config.
-
-Run the smaller nullable primitive Lua example with:
-
-```sh
-eval "$(luarocks path --tree build/luarocks)" && lua examples/lua_nullable.lua
-```
-
-It shows `nullable = true` on optional `u64`, `f64`, and `bool` fields, where
-missing or JSON `null` decode to Lua `nil` and `nil`/`lj.json_null` values are
-omitted when encoding.
-
-Run the nested `json_value` Lua example with:
-
-```sh
-eval "$(luarocks path --tree build/luarocks)" && lua examples/lua_json_value_nested.lua
-```
-
-It shows a nested object `json_value` field decoding into Lua values and being
-reused on a runtime configured with `clear_destination_by_default = false`.
-
-Run the object-array `json_value` Lua example with:
-
-```sh
-eval "$(luarocks path --tree build/luarocks)" && lua examples/lua_json_value_object_array.lua
-```
-
-It shows `json_value` fields inside object-array element schemas. On a runtime
-configured with `clear_destination_by_default = false`, omitted arrays are
-preserved and present arrays are replaced, which matches the more idiomatic Lua
-expectation for record reuse.
+See [runtime limits](../docs/api.md#parse-limits-and-reusable-storage) and
+[large values](../docs/large-values.md) for string, allocation and spool budgets.

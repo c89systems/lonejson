@@ -526,7 +526,7 @@ extern "C" {
 /** Patch component of the lonejson header version. */
 #define LONEJSON_VERSION_PATCH 0
 /** Shared-library ABI / SONAME version for binary compatibility tracking. */
-#define LONEJSON_ABI_VERSION 26
+#define LONEJSON_ABI_VERSION 27
 
 /** Marks a mapping field as required during parse. */
 #define LONEJSON_FIELD_REQUIRED (1u << 0)
@@ -1878,8 +1878,9 @@ typedef struct lonejson_oidc_bearer_validation {
 
 #endif
 /** Callback invoked after one push-fed selected array item has been parsed into
- * `dst`. The push stream cleans up and reuses `dst` after the callback returns,
- * so callers that need to retain an item must copy it here.
+ * `dst`. By default the push stream cleans up and reuses `dst` after the
+ * callback returns, so retaining an item requires a copy. With per-stream
+ * record reuse enabled, the caller owns reset and cleanup instead.
  */
 typedef lonejson_status (*lonejson_array_stream_item_fn)(void *user, void *dst);
 /** Callback invoked after one push-fed selected string-array item has been
@@ -1888,9 +1889,9 @@ typedef lonejson_status (*lonejson_array_stream_item_fn)(void *user, void *dst);
  */
 typedef lonejson_status (*lonejson_array_stream_string_fn)(
     void *user, const char *data, size_t len, lonejson_error *error);
-/** Opaque incremental Server-Sent Events parser state. */
+/** Incremental Server-Sent Events parser receiver. */
 typedef struct lonejson_sse lonejson_sse;
-/** Opaque incremental MIME multipart parser state. */
+/** Incremental MIME multipart parser receiver. */
 typedef struct lonejson_multipart lonejson_multipart;
 /** Pull-style JSON generator state. */
 typedef struct lonejson_generator lonejson_generator;
@@ -2929,6 +2930,80 @@ struct lonejson_http_provider_config {
 };
 #endif
 
+/** Producer callback used by `lonejson_writer_generator_init()`.
+ *
+ * The callback emits zero or more writer events into `writer`. Return
+ * `LONEJSON_STATUS_OK` after the complete JSON document has been emitted. A
+ * writer event that returns `LONEJSON_STATUS_OK` has been accepted, even if the
+ * generator still needs later reads to drain pending bytes. If a writer event
+ * returns `LONEJSON_STATUS_TRUNCATED`, immediately return that status and retry
+ * the same event when the producer is called again.
+ */
+typedef lonejson_status (*lonejson_writer_producer_fn)(lonejson_writer *writer,
+                                                       void *user,
+                                                       lonejson_error *error);
+
+/** Library-owned SSE receiver, created by `lonejson_sse_open()`.
+ * Parser state stays private. Do not allocate or copy this shell; release it
+ * through `close()`. JSON methods take the runtime after the receiver and
+ * preserve the corresponding free functions' streaming and ownership rules.
+ */
+struct lonejson_sse {
+  /** Feeds SSE bytes and delivers event chunks incrementally. */
+  lonejson_status (*push)(lonejson_sse *sse, const void *bytes, size_t len,
+                          const lonejson_sse_handler *handler, void *user,
+                          lonejson_error *error);
+  /** Dispatches a trailing event at EOF. */
+  lonejson_status (*finish)(lonejson_sse *sse,
+                            const lonejson_sse_handler *handler, void *user,
+                            lonejson_error *error);
+  /** Feeds SSE bytes into mapped JSON event decoding. */
+  lonejson_status (*push_json)(lonejson_sse *sse, lonejson *runtime,
+                               const lonejson_map *map, void *dst,
+                               const void *bytes, size_t len,
+                               const lonejson_sse_json_options *options,
+                               lonejson_sse_json_event_fn event_cb, void *user,
+                               lonejson_error *error);
+  /** Finishes mapped JSON event decoding. */
+  lonejson_status (*finish_json)(lonejson_sse *sse, lonejson *runtime,
+                                 const lonejson_map *map, void *dst,
+                                 const lonejson_sse_json_options *options,
+                                 lonejson_sse_json_event_fn event_cb,
+                                 void *user, lonejson_error *error);
+  /** Feeds SSE bytes into arbitrary JSON event decoding. */
+  lonejson_status (*push_json_value)(lonejson_sse *sse, lonejson *runtime,
+                                     lonejson_json_value *value,
+                                     const void *bytes, size_t len,
+                                     const lonejson_sse_json_options *options,
+                                     lonejson_sse_json_value_event_fn event_cb,
+                                     void *user, lonejson_error *error);
+  /** Finishes arbitrary JSON event decoding. */
+  lonejson_status (*finish_json_value)(
+      lonejson_sse *sse, lonejson *runtime, lonejson_json_value *value,
+      const lonejson_sse_json_options *options,
+      lonejson_sse_json_value_event_fn event_cb, void *user,
+      lonejson_error *error);
+  /** Releases the parser and its owned resources. */
+  void (*close)(lonejson_sse *sse);
+};
+
+/** Library-owned multipart receiver, created by `lonejson_multipart_open()`.
+ * Parser state stays private. Do not allocate or copy this shell; release it
+ * through `close()`. Part callbacks retain their existing borrowed lifetimes.
+ */
+struct lonejson_multipart {
+  /** Feeds multipart bytes and delivers part data incrementally. */
+  lonejson_status (*push)(lonejson_multipart *multipart, const void *bytes,
+                          size_t len, const lonejson_multipart_handler *handler,
+                          void *user, lonejson_error *error);
+  /** Validates that the closing boundary arrived before EOF. */
+  lonejson_status (*finish)(lonejson_multipart *multipart,
+                            const lonejson_multipart_handler *handler,
+                            void *user, lonejson_error *error);
+  /** Releases the parser and its owned resources. */
+  void (*close)(lonejson_multipart *multipart);
+};
+
 /** Instantiated lonejson runtime.
  *
  * Construct this with `lonejson_new()` and release it with `lonejson_free()`.
@@ -3062,6 +3137,51 @@ struct lonejson {
   void (*init)(lonejson *runtime, const lonejson_map *map, void *value);
   /** Resets a mapped value while preserving caller-owned fixed backing. */
   void (*reset)(lonejson *runtime, const lonejson_map *map, void *value);
+  /** Assigns null to one field in an initialized mapped record. */
+  lonejson_status (*record_assign_null)(lonejson *runtime,
+                                        const lonejson_map *map, void *record,
+                                        const lonejson_field *field,
+                                        lonejson_error *error);
+  /** Assigns decoded text to one mapped string field. */
+  lonejson_status (*record_assign_string)(lonejson *runtime,
+                                          const lonejson_map *map, void *record,
+                                          const lonejson_field *field,
+                                          const char *data, size_t len,
+                                          lonejson_error *error);
+  /** Appends decoded text to one mapped string array. */
+  lonejson_status (*record_array_append_string)(
+      lonejson *runtime, const lonejson_map *map, void *record,
+      const lonejson_field *field, lonejson_string_array *array,
+      const char *data, size_t len, lonejson_error *error);
+  /** Appends one signed integer to a mapped array. */
+  lonejson_status (*record_array_append_i64)(
+      lonejson *runtime, const lonejson_map *map, void *record,
+      const lonejson_field *field, lonejson_i64_array *array,
+      lonejson_int64 value, lonejson_error *error);
+  /** Appends one unsigned integer to a mapped array. */
+  lonejson_status (*record_array_append_u64)(
+      lonejson *runtime, const lonejson_map *map, void *record,
+      const lonejson_field *field, lonejson_u64_array *array,
+      lonejson_uint64 value, lonejson_error *error);
+  /** Appends one number to a mapped array. */
+  lonejson_status (*record_array_append_f64)(
+      lonejson *runtime, const lonejson_map *map, void *record,
+      const lonejson_field *field, lonejson_f64_array *array, double value,
+      lonejson_error *error);
+  /** Appends one boolean to a mapped array. */
+  lonejson_status (*record_array_append_bool)(lonejson *runtime,
+                                              const lonejson_map *map,
+                                              void *record,
+                                              const lonejson_field *field,
+                                              lonejson_bool_array *array,
+                                              int value, lonejson_error *error);
+  /** Appends one uninitialized slot to a mapped object array. */
+  void *(*record_object_array_append_slot)(lonejson *runtime,
+                                           const lonejson_map *map,
+                                           void *record,
+                                           const lonejson_field *field,
+                                           lonejson_object_array *array,
+                                           lonejson_error *error);
   /** Releases dynamic storage owned by one mapped value. */
   void (*cleanup)(lonejson *runtime, const lonejson_map *map, void *value);
   /** Opens an object-framed stream over a reader callback. */
@@ -3103,6 +3223,31 @@ struct lonejson {
   lonejson_array_stream *(*array_stream_open_push)(lonejson *runtime,
                                                    const char *path,
                                                    lonejson_error *error);
+  /** Pushes SSE bytes into mapped JSON event decoding. */
+  lonejson_status (*sse_push_json)(lonejson *runtime, lonejson_sse *sse,
+                                   const lonejson_map *map, void *dst,
+                                   const void *bytes, size_t len,
+                                   const lonejson_sse_json_options *options,
+                                   lonejson_sse_json_event_fn event_cb,
+                                   void *user, lonejson_error *error);
+  /** Finishes mapped SSE JSON event decoding. */
+  lonejson_status (*sse_finish_json)(lonejson *runtime, lonejson_sse *sse,
+                                     const lonejson_map *map, void *dst,
+                                     const lonejson_sse_json_options *options,
+                                     lonejson_sse_json_event_fn event_cb,
+                                     void *user, lonejson_error *error);
+  /** Pushes SSE bytes into arbitrary JSON event decoding. */
+  lonejson_status (*sse_push_json_value)(
+      lonejson *runtime, lonejson_sse *sse, lonejson_json_value *value,
+      const void *bytes, size_t len, const lonejson_sse_json_options *options,
+      lonejson_sse_json_value_event_fn event_cb, void *user,
+      lonejson_error *error);
+  /** Finishes arbitrary SSE JSON event decoding. */
+  lonejson_status (*sse_finish_json_value)(
+      lonejson *runtime, lonejson_sse *sse, lonejson_json_value *value,
+      const lonejson_sse_json_options *options,
+      lonejson_sse_json_value_event_fn event_cb, void *user,
+      lonejson_error *error);
   /** Initializes one spool handle with the runtime default spool policy. */
   void (*spooled_init)(lonejson *runtime, lonejson_spooled *value);
   /** Initializes one spool handle with one named runtime spool policy. */
@@ -3217,6 +3362,15 @@ struct lonejson {
   lonejson_status (*generator_init)(lonejson *runtime,
                                     lonejson_generator *generator,
                                     const lonejson_map *map, const void *src);
+  /** Measures replayable mapped output without retaining the JSON. */
+  lonejson_status (*generator_measure)(lonejson *runtime,
+                                       const lonejson_map *map, const void *src,
+                                       size_t *out_len, lonejson_error *error);
+  /** Initializes a pull generator driven by writer events. */
+  lonejson_status (*writer_generator_init)(lonejson *runtime,
+                                           lonejson_generator *generator,
+                                           lonejson_writer_producer_fn producer,
+                                           void *producer_user);
   /** Initializes one streaming writer using runtime defaults. */
   lonejson_status (*writer_init_sink)(lonejson *runtime,
                                       lonejson_writer *writer,
@@ -3325,6 +3479,16 @@ struct lonejson {
                                        const lonejson_auth_provider *provider,
                                        lonejson_error *error);
 #ifdef LONEJSON_WITH_OIDC
+  /** Parses a bounded OAuth2 token introspection response. */
+  lonejson_status (*oauth2_introspection_response_parse_json)(
+      lonejson *runtime, const char *json, size_t len,
+      size_t max_response_bytes, lonejson_oauth2_introspection_response *out,
+      lonejson_error *error);
+  /** Parses a bounded OIDC UserInfo response. */
+  lonejson_status (*oidc_userinfo_response_parse_json)(
+      lonejson *runtime, const char *json, size_t len,
+      size_t max_response_bytes, lonejson_oidc_userinfo_response *out,
+      lonejson_error *error);
   /** Parses one OIDC discovery JSON object into `out`. */
   lonejson_status (*oidc_discovery_parse_json)(lonejson *runtime,
                                                const char *json, size_t len,
@@ -3451,6 +3615,13 @@ struct lonejson {
   lonejson_status (*curl_upload_init)(lonejson *runtime,
                                       lonejson_curl_upload *ctx,
                                       const lonejson_map *map, const void *src);
+#if defined(LONEJSON_WITH_CURL) && defined(LONEJSON_WITH_OIDC)
+  /** Initializes a curl adapter for a bounded JWKS cache refresh. */
+  lonejson_status (*oidc_jwks_cache_parse_init)(
+      lonejson *runtime, lonejson_oidc_jwks_cache_parse *ctx,
+      lonejson_oidc_jwks_cache *cache,
+      const lonejson_oidc_jwks_cache_policy *policy);
+#endif
   /** Releases the runtime and all runtime-owned state. */
   void (*free)(lonejson *runtime);
 };
@@ -3655,19 +3826,6 @@ struct lonejson_writer_value_stream {
   /** Releases resources owned by a writer value stream. */
   void (*cleanup)(lonejson_writer_value_stream *stream);
 };
-
-/** Producer callback used by `lonejson_writer_generator_init()`.
- *
- * The callback emits zero or more writer events into `writer`. Return
- * `LONEJSON_STATUS_OK` after the complete JSON document has been emitted. A
- * writer event that returns `LONEJSON_STATUS_OK` has been accepted, even if the
- * generator still needs later reads to drain pending bytes. If a writer event
- * returns `LONEJSON_STATUS_TRUNCATED`, immediately return that status and retry
- * the same event when the producer is called again.
- */
-typedef lonejson_status (*lonejson_writer_producer_fn)(lonejson_writer *writer,
-                                                       void *user,
-                                                       lonejson_error *error);
 
 /** Callback that emits one replacement JSON value through a writer.
  *
@@ -5243,6 +5401,8 @@ typedef enum lonejson_array_stream_result {
 struct lonejson_stream {
   /** Last stream error. Cleared when a complete object is emitted. */
   lonejson_error error;
+  /** Returns the stream's last error; named to avoid the `error` field. */
+  const lonejson_error *(*error_fn)(const lonejson_stream *stream);
   /** Parses the next top-level object into `dst`. */
   lonejson_stream_result (*next)(lonejson_stream *stream, void *dst,
                                  lonejson_error *error);
@@ -5259,6 +5419,11 @@ struct lonejson_stream {
 struct lonejson_array_stream {
   /** Last array-stream error. Cleared when an item is emitted. */
   lonejson_error error;
+  /** Returns the stream's last error; named to avoid the `error` field. */
+  const lonejson_error *(*error_fn)(const lonejson_array_stream *stream);
+  /** Selects caller-owned mapped-record reuse before processing starts. */
+  lonejson_status (*set_record_reuse)(lonejson_array_stream *stream,
+                                      int enabled, lonejson_error *error);
   /** Parses the next selected item through `map` into `dst`. */
   lonejson_array_stream_result (*next)(lonejson_array_stream *stream,
                                        const lonejson_map *map, void *dst,
@@ -5570,6 +5735,28 @@ lonejson_array_stream *lonejson_array_stream_open_fd(lonejson *runtime,
 lonejson_array_stream *lonejson_array_stream_open_push(lonejson *runtime,
                                                        const char *path,
                                                        lonejson_error *error);
+/** Selects caller-owned mapped-record reuse before processing this stream.
+ *
+ * `enabled == 1` suppresses destination initialization and automatic cleanup
+ * after push callbacks. Supply initialized storage, reset it between items
+ * with `lonejson_reset()`, and perform final cleanup with `lonejson_cleanup()`,
+ * including after parse errors or callback cancellation. Closing the stream
+ * does not clean the record. No automatic reset is introduced.
+ *
+ * `enabled == 0` is the default and inherits the runtime policy captured when
+ * the stream opened, including existing push callback cleanup. Other streams
+ * and the owning runtime are unaffected. Raw-value and string delivery are
+ * unchanged. Works with every array-stream constructor.
+ *
+ * Call before the first next, push or finish operation, including raw/string
+ * variants. A zero-length push or a WOULD_BLOCK result starts processing too.
+ * NULL streams, values other than 0/1, and late configuration return
+ * `LONEJSON_STATUS_INVALID_ARGUMENT` without changing processing state or
+ * reuse policy. The supplied `error` receives the configuration diagnostic.
+ */
+lonejson_status
+lonejson_array_stream_set_record_reuse(lonejson_array_stream *stream,
+                                       int enabled, lonejson_error *error);
 /** Parses the next selected array item into `dst` through `map`. */
 lonejson_array_stream_result
 lonejson_array_stream_next(lonejson_array_stream *stream,
@@ -8058,6 +8245,9 @@ struct lonejson_curl_upload {
   int (*is_rewindable)(const struct lonejson_curl_upload *ctx);
   /** Restarts serialization; see lonejson_curl_upload_rewind for failures. */
   lonejson_status (*rewind)(struct lonejson_curl_upload *ctx);
+  /** Handles curl seek requests using the upload's replay policy. */
+  int (*seek_callback)(struct lonejson_curl_upload *ctx, curl_off_t offset,
+                       int origin);
 };
 
 #ifdef LONEJSON_WITH_OIDC
@@ -9539,6 +9729,11 @@ LONEJSON_SHORT_ALIAS_INLINE lj_array_stream *
 lj_array_stream_open_push(lonejson *runtime, const char *path,
                           lj_error *error) {
   return lonejson_array_stream_open_push(runtime, path, error);
+}
+/** Selects caller-owned mapped-record reuse before stream processing. */
+LONEJSON_SHORT_ALIAS_INLINE lj_status lj_array_stream_set_record_reuse(
+    lj_array_stream *stream, int enabled, lj_error *error) {
+  return lonejson_array_stream_set_record_reuse(stream, enabled, error);
 }
 /** Parses the next selected array item into `dst` through `map`. */
 LONEJSON_SHORT_ALIAS_INLINE lj_array_stream_result lj_array_stream_next(

@@ -97,7 +97,7 @@ option(LONEJSON_BUILD_WITH_CURL "Build lonejson with curl adapter APIs enabled."
 option(LONEJSON_BUILD_WITH_OPENSSL "Build lonejson with OpenSSL-backed auth/crypto support enabled." OFF)
 option(LONEJSON_BUILD_WITH_JWT "Build lonejson with JWT/JWK auth APIs enabled." OFF)
 option(LONEJSON_BUILD_WITH_OIDC "Build lonejson with OIDC/OAuth2 helper APIs enabled." OFF)
-set(LONEJSON_ABI_VERSION "26" CACHE STRING "Shared-library ABI / SONAME version"
+set(LONEJSON_ABI_VERSION "27" CACHE STRING "Shared-library ABI / SONAME version"
     FORCE)
 
 set(LONEJSON_PUBLIC_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -570,6 +570,14 @@ if(LONEJSON_BUILD_TESTS)
   add_dependencies(lonejson_tests lonejson_generate_fixtures)
   add_test(NAME lonejson_tests COMMAND lonejson_tests)
   if(UNIX)
+    add_executable(lonejson_array_stream_record_reuse_tests tests/test_array_stream_record_reuse.c)
+    target_link_libraries(lonejson_array_stream_record_reuse_tests PRIVATE lonejson_shared)
+    target_compile_definitions(lonejson_array_stream_record_reuse_tests PRIVATE
+      LONEJSON_TEST_TMP_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    lonejson_configure_c_target(lonejson_array_stream_record_reuse_tests)
+    add_test(NAME lonejson_array_stream_record_reuse_tests
+      COMMAND lonejson_array_stream_record_reuse_tests)
+    list(APPEND LONEJSON_STACK_USAGE_TARGETS lonejson_array_stream_record_reuse_tests)
     find_package(Threads REQUIRED)
     add_executable(lonejson_worker_stack_tests tests/test_worker_stack.c)
     target_link_libraries(lonejson_worker_stack_tests PRIVATE lonejson_shared Threads::Threads)
@@ -1038,6 +1046,11 @@ if(LONEJSON_BUILD_TESTS)
       NAME lonejson_release_pipeline_makefile_tests
       COMMAND "${LONEJSON_BASH_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_pipeline_makefile.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(
+      NAME lonejson_downstream_abi_report_tests
+      COMMAND "${LONEJSON_BASH_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_downstream_abi_report.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(
       NAME lonejson_release_checksum_manifest_tests

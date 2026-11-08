@@ -933,6 +933,12 @@ static lonejson_status lonejson__runtime_curl_string_items_parse_init(
 static lonejson_status
 lonejson__runtime_curl_upload_init(lonejson *runtime, lonejson_curl_upload *ctx,
                                    const lonejson_map *map, const void *src);
+#ifdef LONEJSON_WITH_OIDC
+static lonejson_status lonejson__runtime_oidc_jwks_cache_parse_init(
+    lonejson *runtime, lonejson_oidc_jwks_cache_parse *ctx,
+    lonejson_oidc_jwks_cache *cache,
+    const lonejson_oidc_jwks_cache_policy *policy);
+#endif
 #endif
 
 lonejson *lonejson_new(const lonejson_config *config, lonejson_error *error) {
@@ -1056,6 +1062,15 @@ lonejson *lonejson_new(const lonejson_config *config, lonejson_error *error) {
   runtime->visit_path_value_fd = lonejson__runtime_visit_path_value_fd;
   runtime->init = lonejson__runtime_init_value;
   runtime->reset = lonejson__runtime_reset_value;
+  runtime->record_assign_null = lonejson_record_assign_null;
+  runtime->record_assign_string = lonejson_record_assign_string;
+  runtime->record_array_append_string = lonejson_record_array_append_string;
+  runtime->record_array_append_i64 = lonejson_record_array_append_i64;
+  runtime->record_array_append_u64 = lonejson_record_array_append_u64;
+  runtime->record_array_append_f64 = lonejson_record_array_append_f64;
+  runtime->record_array_append_bool = lonejson_record_array_append_bool;
+  runtime->record_object_array_append_slot =
+      lonejson_record_object_array_append_slot;
   runtime->cleanup = lonejson__runtime_cleanup_value;
   runtime->stream_open_reader = lonejson__runtime_stream_open_reader;
   runtime->stream_open_filep = lonejson__runtime_stream_open_filep;
@@ -1067,6 +1082,12 @@ lonejson *lonejson_new(const lonejson_config *config, lonejson_error *error) {
   runtime->array_stream_open_path = lonejson__runtime_array_stream_open_path;
   runtime->array_stream_open_fd = lonejson__runtime_array_stream_open_fd;
   runtime->array_stream_open_push = lonejson__runtime_array_stream_open_push;
+#ifndef LONEJSON__OMIT_PROTOCOL_FRAMING_IMPL
+  runtime->sse_push_json = lonejson_sse_push_json;
+  runtime->sse_finish_json = lonejson_sse_finish_json;
+  runtime->sse_push_json_value = lonejson_sse_push_json_value;
+  runtime->sse_finish_json_value = lonejson_sse_finish_json_value;
+#endif
   runtime->spooled_init = lonejson__runtime_spooled_init;
   runtime->spooled_init_class = lonejson__runtime_spooled_init_class;
   runtime->json_value_init = lonejson__runtime_json_value_init;
@@ -1098,6 +1119,8 @@ lonejson *lonejson_new(const lonejson_config *config, lonejson_error *error) {
   runtime->value_rewrite_selector_path =
       lonejson__runtime_value_rewrite_selector_path;
   runtime->generator_init = lonejson__runtime_generator_init;
+  runtime->generator_measure = lonejson_generator_measure;
+  runtime->writer_generator_init = lonejson_writer_generator_init;
   runtime->writer_init_sink = lonejson__runtime_writer_init_sink;
   runtime->write_json_string_sink = lonejson_write_json_string_sink;
   runtime->write_json_string_buffer_sink =
@@ -1126,6 +1149,10 @@ lonejson *lonejson_new(const lonejson_config *config, lonejson_error *error) {
 #endif
 #ifdef LONEJSON_WITH_OIDC
   runtime->oidc_discovery_parse_json = lonejson_oidc_discovery_parse_json;
+  runtime->oauth2_introspection_response_parse_json =
+      lonejson_oauth2_introspection_response_parse_json;
+  runtime->oidc_userinfo_response_parse_json =
+      lonejson_oidc_userinfo_response_parse_json;
   runtime->oidc_fetch_discovery = lonejson_oidc_fetch_discovery;
   runtime->oidc_jwks_cache_update_json = lonejson_oidc_jwks_cache_update_json;
   runtime->oidc_jwks_cache_refresh = lonejson_oidc_jwks_cache_refresh;
@@ -1160,6 +1187,10 @@ lonejson *lonejson_new(const lonejson_config *config, lonejson_error *error) {
   runtime->curl_string_items_parse_init =
       lonejson__runtime_curl_string_items_parse_init;
   runtime->curl_upload_init = lonejson__runtime_curl_upload_init;
+#ifdef LONEJSON_WITH_OIDC
+  runtime->oidc_jwks_cache_parse_init =
+      lonejson__runtime_oidc_jwks_cache_parse_init;
+#endif
 #endif
   runtime->free = lonejson_free;
 
@@ -1944,6 +1975,7 @@ static void lonejson__stream_assign_methods(lonejson_stream *stream) {
     return;
   }
   stream->next = lonejson_stream_next;
+  stream->error_fn = lonejson_stream_error;
   stream->close = lonejson_stream_close;
 }
 
@@ -2801,6 +2833,14 @@ lonejson__runtime_curl_upload_init(lonejson *runtime, lonejson_curl_upload *ctx,
                                    const lonejson_map *map, const void *src) {
   return lonejson_curl_upload_init(ctx, runtime, map, src);
 }
+#ifdef LONEJSON_WITH_OIDC
+static lonejson_status lonejson__runtime_oidc_jwks_cache_parse_init(
+    lonejson *runtime, lonejson_oidc_jwks_cache_parse *ctx,
+    lonejson_oidc_jwks_cache *cache,
+    const lonejson_oidc_jwks_cache_policy *policy) {
+  return lonejson_oidc_jwks_cache_parse_init(ctx, runtime, cache, policy);
+}
+#endif
 #endif
 
 lonejson_status lonejson_validate_buffer(lonejson *runtime, const void *data,

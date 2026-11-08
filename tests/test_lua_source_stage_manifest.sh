@@ -71,6 +71,9 @@ resolve_staged_include() {
 }
 
 require_manifest_entry src/lua/lonejson_lua_visitor_facade.inc.h
+for doc in "$repo_root"/docs/*.md; do
+  require_manifest_entry "docs/${doc##*/}"
+done
 require_manifest_entry scripts/cpkt-toolchains.sh
 require_manifest_entry scripts/cpkt-native-apple.sh
 require_manifest_entry scripts/require_cache_path.sh

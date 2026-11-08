@@ -51,17 +51,16 @@ static void test_curl_upload_rewind(void) {
   EXPECT(length > 0u && length < sizeof(expected));
   EXPECT(memchr(expected, '\n', length) != NULL);
   for (i = 0; i < 3; ++i) {
-    EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_SET) ==
-           CURL_SEEKFUNC_OK);
+    EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_OK);
     prefix = upload.read_callback(&upload, actual, 1u, 5u);
     EXPECT(prefix == 5u);
-    EXPECT(lonejson_curl_seek_callback(&upload, 1, SEEK_SET) ==
+    EXPECT(upload.seek_callback(&upload, 1, SEEK_SET) ==
            CURL_SEEKFUNC_CANTSEEK);
-    EXPECT(lonejson_curl_seek_callback(&upload, -1, SEEK_SET) ==
+    EXPECT(upload.seek_callback(&upload, -1, SEEK_SET) ==
            CURL_SEEKFUNC_CANTSEEK);
-    EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_CUR) ==
+    EXPECT(upload.seek_callback(&upload, 0, SEEK_CUR) ==
            CURL_SEEKFUNC_CANTSEEK);
-    EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_END) ==
+    EXPECT(upload.seek_callback(&upload, 0, SEEK_END) ==
            CURL_SEEKFUNC_CANTSEEK);
     EXPECT(test_curl_drain(&upload, actual + prefix, sizeof(actual) - prefix) +
                prefix ==
@@ -76,8 +75,7 @@ static void test_curl_upload_rewind(void) {
   upload.cleanup(&upload);
   EXPECT(!upload.is_rewindable(&upload));
   EXPECT(upload.rewind(&upload) == LONEJSON_STATUS_INVALID_ARGUMENT);
-  EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_SET) ==
-         CURL_SEEKFUNC_FAIL);
+  EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_FAIL);
   upload.cleanup(&upload);
 }
 
@@ -101,20 +99,17 @@ static void test_curl_upload_rewind_one_shot(void) {
                                    &test_nested_json_value_doc_map,
                                    &doc) == LONEJSON_STATUS_OK);
   EXPECT(!upload.is_rewindable(&upload));
-  EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_SET) ==
-         CURL_SEEKFUNC_CANTSEEK);
+  EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_CANTSEEK);
   EXPECT(upload.generator.error.code == LONEJSON_STATUS_OK);
   prefix = upload.read_callback(&upload, actual, 1u, 3u);
   EXPECT(prefix == 3u);
-  EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_SET) ==
-         CURL_SEEKFUNC_CANTSEEK);
+  EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_CANTSEEK);
   length = prefix + test_curl_drain(&upload, actual + prefix,
                                     sizeof(actual) - prefix - 1u);
   actual[length] = '\0';
   EXPECT(strcmp(actual, "{\"type\":\"mixed\",\"response\":{\"status\":\"ok\","
                         "\"payload\":[1,2]}}") == 0);
-  EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_SET) ==
-         CURL_SEEKFUNC_CANTSEEK);
+  EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_CANTSEEK);
   upload.cleanup(&upload);
   lonejson_cleanup(&test_nested_json_value_doc_map, &doc);
 }
@@ -163,8 +158,7 @@ static void test_curl_upload_rewind_array(void) {
                                    &test_curl_array_map,
                                    &doc) == LONEJSON_STATUS_OK);
   EXPECT(!upload.is_rewindable(&upload));
-  EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_SET) ==
-         CURL_SEEKFUNC_CANTSEEK);
+  EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_CANTSEEK);
   length = test_curl_drain(&upload, expected, sizeof(expected));
   EXPECT(length < sizeof(expected));
   expected[length] = '\0';
@@ -211,8 +205,7 @@ static void test_curl_upload_rewind_allocation_failure(void) {
     EXPECT(upload.rewind(&upload) == LONEJSON_STATUS_OK);
     prefix = upload.read_callback(&upload, actual, 1u, 3u);
     alloc.successful_calls_before_failure = alloc.calls + extra;
-    EXPECT(lonejson_curl_seek_callback(&upload, 0, SEEK_SET) ==
-           CURL_SEEKFUNC_FAIL);
+    EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_FAIL);
     EXPECT(upload.generator.error.code == LONEJSON_STATUS_ALLOCATION_FAILED);
     alloc.successful_calls_before_failure = (size_t)-1;
     EXPECT(prefix + test_curl_drain(&upload, actual + prefix,

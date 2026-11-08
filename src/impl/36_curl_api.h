@@ -66,6 +66,11 @@ lonejson__curl_upload_size_method(const lonejson_curl_upload *ctx) {
   return lonejson_curl_upload_size(ctx);
 }
 
+static int lonejson__curl_upload_seek_method(lonejson_curl_upload *ctx,
+                                             curl_off_t offset, int origin) {
+  return lonejson_curl_seek_callback(ctx, offset, origin);
+}
+
 #ifdef LONEJSON_WITH_OIDC
 static size_t
 lonejson__oidc_jwks_cache_write_method(lonejson_oidc_jwks_cache_parse *ctx,
@@ -126,6 +131,7 @@ static void lonejson__curl_upload_assign_methods(lonejson_curl_upload *ctx) {
   ctx->size_fn = lonejson__curl_upload_size_method;
   ctx->is_rewindable = lonejson_curl_upload_is_rewindable;
   ctx->rewind = lonejson_curl_upload_rewind;
+  ctx->seek_callback = lonejson__curl_upload_seek_method;
   ctx->cleanup = lonejson_curl_upload_cleanup;
 }
 

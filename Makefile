@@ -90,6 +90,8 @@ LUA_ROCK_BUILD_BYPRODUCTS := \
 	$(CURDIR)/lonejson \
 	$(CURDIR)/src/lua/lonejson_lua.o
 LUA_ROCK_SOURCES := \
+	README.md \
+	$(wildcard docs/*.md) \
 	lonejson.rockspec.in \
 	scripts/build_lua_rock.sh \
 	scripts/cpkt-toolchains.sh \
@@ -122,11 +124,12 @@ LUA_ROCK_SOURCES := \
 
 SANITIZER_CTEST_EXCLUDE := ^lonejson_lua_(target|fuzz|interop|target_runner_argument|benchmark_configuration)_tests$$
 SLICE_BUILD_TARGETS := lonejson_tests lonejson_map_cache_no_tls_tests lonejson_short_names_tests lonejson_short_names_disabled_tests lonejson_static_link_tests lonejson_shared_link_tests
-SLICE_CTEST_INCLUDE := ^lonejson_(tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|shared_soversion_tests|single_header_version_tests|header_abi_version_tests|single_header_release_version_tests|library_exports_tests)$$
+SLICE_CTEST_INCLUDE := ^lonejson_(tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|single_header_version_tests|single_header_release_version_tests|library_exports_tests)$$
 
 .PHONY: \
 	help \
 	finalize-slice \
+	abi-check \
 	build \
 	build-debug \
 	build-host \
@@ -229,6 +232,7 @@ SLICE_CTEST_INCLUDE := ^lonejson_(tests|map_cache_no_tls_tests|short_names_tests
 help:
 	@printf '%s\n' \
 		'make finalize-slice         Format and run incremental core, ABI/header, and Lua checks before committing a slice.' \
+		'make abi-check              Check header/SONAME ABI and report coordinated downstream upgrades when the ABI changes.' \
 		'make build                  Configure and build the full debug tree (tests and standalone examples, excluding lua-* and curl-examples).' \
 		'make build-debug            Alias for make build.' \
 		'make build-host             Configure and build the host-native release preset.' \
@@ -336,8 +340,15 @@ finalize-slice:
 	$(MAKE) format
 	cmake --build --preset $(DEBUG_PRESET) --target $(SLICE_BUILD_TARGETS)
 	ctest --no-tests=error --preset $(DEBUG_PRESET) --output-on-failure -R '$(SLICE_CTEST_INCLUDE)'
+	$(MAKE) abi-check
 	$(MAKE) lua-test
 	$(MAKE) format-check
+
+abi-check: toolchains-host
+	cmake --preset $(DEBUG_PRESET) $(LONEJSON_CMAKE_RELEASE_ARGS)
+	cmake --build --preset $(DEBUG_PRESET) --target lonejson_shared
+	ctest --no-tests=error --preset $(DEBUG_PRESET) --output-on-failure -R '^lonejson_(shared_soversion_tests|header_abi_version_tests)$$'
+	cmake -DLONEJSON_ROOT="$(CURDIR)" -P cmake/report_downstream_abi.cmake
 
 build: deps-host
 	./scripts/build.sh $(DEBUG_PRESET) --stage-examples
