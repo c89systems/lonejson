@@ -42,7 +42,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(runtime, &parsed_envelope_map, &doc);
+  lj_init(runtime, &parsed_envelope_map, &doc, NULL);
   status = lj_json_value_enable_parse_capture(&doc.selector, &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "selector capture setup failed: %s\n", error.message);
@@ -52,14 +52,14 @@ int main(void) {
   status = lj_json_value_enable_parse_capture(&doc.fields, &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "fields capture setup failed: %s\n", error.message);
-    lj_cleanup(&parsed_envelope_map, &doc);
+    lj_cleanup(&parsed_envelope_map, &doc, NULL);
     lj_free(runtime);
     return 1;
   }
   status = lj_json_value_enable_parse_capture(&doc.last_error, &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "last_error capture setup failed: %s\n", error.message);
-    lj_cleanup(&parsed_envelope_map, &doc);
+    lj_cleanup(&parsed_envelope_map, &doc, NULL);
     lj_free(runtime);
     return 1;
   }
@@ -82,7 +82,7 @@ int main(void) {
       lj_serialize_alloc(runtime, &parsed_envelope_map, &doc, NULL, &error);
   if (pretty == NULL) {
     fprintf(stderr, "pretty serialize failed: %s\n", error.message);
-    lj_cleanup(&parsed_envelope_map, &doc);
+    lj_cleanup(&parsed_envelope_map, &doc, NULL);
     lj_free(runtime);
     return 1;
   }
@@ -90,7 +90,7 @@ int main(void) {
   printf("pretty=%s\n", pretty);
 
   LONEJSON_FREE(pretty);
-  lj_cleanup(&parsed_envelope_map, &doc);
+  lj_cleanup(&parsed_envelope_map, &doc, NULL);
   lj_free(runtime);
   return 0;
 }

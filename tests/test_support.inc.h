@@ -251,7 +251,7 @@ static lonejson *test_default_runtime(void) {
 }
 
 static void test_init_map(const lonejson_map *map, void *value) {
-  lonejson_init(test_default_runtime(), map, value);
+  lonejson_init(test_default_runtime(), map, value, NULL);
 }
 
 static lonejson_status test_parse_cstr(const lonejson_map *map, void *dst,

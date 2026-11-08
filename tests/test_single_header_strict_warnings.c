@@ -60,17 +60,17 @@ int main(void) {
     lonejson_free(runtime);
     return 1;
   }
-  lonejson_init(runtime, &strict_item_map, &item);
+  lonejson_init(runtime, &strict_item_map, &item, NULL);
   result = lonejson_array_stream_next(stream, &strict_item_map, &item, &error);
   if (result != LONEJSON_ARRAY_STREAM_ITEM || item.id[0] != 'o' ||
       item.id[1] != 'k' || item.id[2] != '\0') {
-    lonejson_cleanup(&strict_item_map, &item);
+    lonejson_cleanup(&strict_item_map, &item, NULL);
     lonejson_array_stream_close(stream);
     lonejson_free(runtime);
     return 1;
   }
   result = lonejson_array_stream_next(stream, &strict_item_map, &item, &error);
-  lonejson_cleanup(&strict_item_map, &item);
+  lonejson_cleanup(&strict_item_map, &item, NULL);
   lonejson_array_stream_close(stream);
   lonejson_free(runtime);
   return result == LONEJSON_ARRAY_STREAM_EOF ? 0 : 1;

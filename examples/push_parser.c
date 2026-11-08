@@ -53,7 +53,7 @@ int main(void) {
     return 1;
   }
 
-  lonejson_init(lj, &build_info_map, &info);
+  lonejson_init(lj, &build_info_map, &info, NULL);
 
   stream = lonejson_stream_open_reader(lj, &build_info_map, build_reader,
                                        &state, &error);

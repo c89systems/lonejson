@@ -81,7 +81,7 @@ static void test_generator_pretty_streams_source_field(void) {
   EXPECT(strstr(output, "\n") != NULL);
   EXPECT(strstr(output, "\"text\": \"hello\"") != NULL);
   lonejson_generator_cleanup(&generator);
-  lonejson_cleanup(&test_source_doc_map, &doc);
+  lonejson_cleanup(&test_source_doc_map, &doc, NULL);
   unlink(path);
 }
 
@@ -127,7 +127,7 @@ static void test_generator_streams_json_value_fields(void) {
                 "true]},\"fields\":[\"id\",{\"metrics\":[null,3.14]}],"
                 "\"last_error\":null}") == 0);
   lonejson_generator_cleanup(&generator);
-  lonejson_cleanup(&test_json_value_doc_map, &doc);
+  lonejson_cleanup(&test_json_value_doc_map, &doc, NULL);
 }
 
 static void test_generator_pretty_streams_json_value_reader(void) {
@@ -179,7 +179,7 @@ static void test_generator_pretty_streams_json_value_reader(void) {
   EXPECT(strstr(output, "\"fields\": [\n") != NULL);
   EXPECT(strstr(output, "\"nested\": [\n") != NULL);
   lonejson_generator_cleanup(&generator);
-  lonejson_cleanup(&test_json_value_doc_map, &doc);
+  lonejson_cleanup(&test_json_value_doc_map, &doc, NULL);
 }
 
 static void test_serialize_omits_empty_optional_fields(void) {
@@ -250,7 +250,7 @@ static void test_serialize_omits_empty_optional_fields(void) {
                   "\"temperature\":1.5,\"stream\":false}") == 0);
     free(allocated);
   }
-  lonejson_cleanup(&test_omit_doc_map, &parsed);
+  lonejson_cleanup(&test_omit_doc_map, &parsed, NULL);
 
   doc.instructions = (char *)malloc(strlen("be terse") + 1u);
   doc.reasoning.effort = (char *)malloc(strlen("medium") + 1u);
@@ -458,7 +458,7 @@ static void test_nullable_presence_primitive_failures(void) {
                            &error);
   EXPECT(status == LONEJSON_STATUS_TYPE_MISMATCH);
   EXPECT(strstr(error.message, "null is not allowed") != NULL);
-  lonejson_cleanup(&test_omit_doc_map, &omit_doc);
+  lonejson_cleanup(&test_omit_doc_map, &omit_doc, NULL);
 
   memset(&doc, 0, sizeof(doc));
   status = test_serialize_buffer(&test_bad_nullable_without_presence_map, &doc,
@@ -720,7 +720,8 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
   close(bytes_fd);
   close(json_fd);
 
-  lonejson_init(test_default_runtime(), &test_source_doc_map, &source_doc);
+  lonejson_init(test_default_runtime(), &test_source_doc_map, &source_doc,
+                NULL);
   strcpy(source_doc.id, "rewind-1");
   text_fp = fopen(text_path, "rb");
   bytes_fd = open(bytes_path, O_RDONLY);
@@ -733,7 +734,7 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
     if (bytes_fd >= 0) {
       close(bytes_fd);
     }
-    lonejson_cleanup(&test_source_doc_map, &source_doc);
+    lonejson_cleanup(&test_source_doc_map, &source_doc, NULL);
     unlink(text_path);
     unlink(bytes_path);
     unlink(json_path);
@@ -756,7 +757,7 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
   EXPECT(measured == strlen(buffer));
   EXPECT(fseek(text_fp, 0L, SEEK_SET) == 0);
   EXPECT(lseek(bytes_fd, 0, SEEK_SET) == 0);
-  lonejson_cleanup(&test_source_doc_map, &source_doc);
+  lonejson_cleanup(&test_source_doc_map, &source_doc, NULL);
   fclose(text_fp);
   close(bytes_fd);
 
@@ -769,7 +770,8 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
   if (pipe(pipe_fds) == 0) {
     EXPECT(write(pipe_fds[1], "pipe", 4u) == 4);
     close(pipe_fds[1]);
-    lonejson_init(test_default_runtime(), &test_source_doc_map, &source_doc);
+    lonejson_init(test_default_runtime(), &test_source_doc_map, &source_doc,
+                  NULL);
     strcpy(source_doc.id, "pipe-1");
     EXPECT(lonejson_source_set_fd(&source_doc.text, pipe_fds[0], &error) ==
            LONEJSON_STATUS_OK);
@@ -777,7 +779,7 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
     status = test_generator_measure(&test_source_doc_map, &source_doc,
                                     &measured, NULL, &error);
     EXPECT(status == LONEJSON_STATUS_INVALID_ARGUMENT);
-    lonejson_cleanup(&test_source_doc_map, &source_doc);
+    lonejson_cleanup(&test_source_doc_map, &source_doc, NULL);
     close(pipe_fds[0]);
   } else {
     EXPECT(0);
@@ -789,7 +791,7 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
   EXPECT(lonejson_json_value_set_path(&json_doc.selector, json_path, &error) ==
          LONEJSON_STATUS_OK);
   EXPECT(lonejson_json_value_is_rewindable(&json_doc.selector) != 0);
-  lonejson_cleanup(&test_json_value_doc_map, &json_doc);
+  lonejson_cleanup(&test_json_value_doc_map, &json_doc, NULL);
 
   poison_bytes(&json_doc, sizeof(json_doc), 0xC4u);
   test_init_map(&test_json_value_doc_map, &json_doc);
@@ -809,7 +811,7 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
                                     &measured, NULL, &error);
     EXPECT(status == LONEJSON_STATUS_OK);
   }
-  lonejson_cleanup(&test_json_value_doc_map, &json_doc);
+  lonejson_cleanup(&test_json_value_doc_map, &json_doc, NULL);
   if (json_fp != NULL) {
     fclose(json_fp);
   }
@@ -830,7 +832,7 @@ static void test_rewindability_edges_and_measure_preserves_sources(void) {
     status = test_generator_measure(&test_json_value_doc_map, &json_doc,
                                     &measured, NULL, &error);
     EXPECT(status == LONEJSON_STATUS_INVALID_ARGUMENT);
-    lonejson_cleanup(&test_json_value_doc_map, &json_doc);
+    lonejson_cleanup(&test_json_value_doc_map, &json_doc, NULL);
     close(pipe_fds[0]);
   } else {
     EXPECT(0);

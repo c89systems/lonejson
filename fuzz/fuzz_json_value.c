@@ -164,7 +164,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
       lonejson_free(runtime_pretty);
     }
   }
-  lonejson_cleanup(&fuzz_json_value_doc_map, &doc);
+  lonejson_cleanup(&fuzz_json_value_doc_map, &doc, NULL);
   lonejson_free(runtime);
 
   memset(&streamed, 0, sizeof(streamed));
@@ -174,7 +174,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
   if (runtime_streamed == NULL) {
     return 0;
   }
-  lonejson_init(runtime_streamed, &fuzz_json_value_doc_map, &streamed);
+  lonejson_init(runtime_streamed, &fuzz_json_value_doc_map, &streamed, NULL);
   memset(&selector_sink, 0, sizeof(selector_sink));
   memset(&fields_sink, 0, sizeof(fields_sink));
   memset(&error_sink, 0, sizeof(error_sink));
@@ -186,7 +186,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
                                      &error_sink, &error);
   (void)lonejson_parse_buffer(runtime_streamed, &fuzz_json_value_doc_map,
                               &streamed, data, size, &error);
-  lonejson_cleanup(&fuzz_json_value_doc_map, &streamed);
+  lonejson_cleanup(&fuzz_json_value_doc_map, &streamed, NULL);
   lonejson_free(runtime_streamed);
 
   memset(&path_doc, 0, sizeof(path_doc));
@@ -209,7 +209,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
   if (runtime_streamed == NULL) {
     return 0;
   }
-  lonejson_init(runtime_streamed, &fuzz_json_value_doc_map, &path_doc);
+  lonejson_init(runtime_streamed, &fuzz_json_value_doc_map, &path_doc, NULL);
   path_visitor = fuzz_path_visitor();
   (void)lonejson_json_value_set_parse_path_visitor(
       &path_doc.selector, &path_visitor, &selector_path_state, &error);
@@ -219,7 +219,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
       &path_doc.last_error, &path_visitor, &error_path_state, &error);
   (void)lonejson_parse_buffer(runtime_streamed, &fuzz_json_value_doc_map,
                               &path_doc, data, size, &error);
-  lonejson_cleanup(&fuzz_json_value_doc_map, &path_doc);
+  lonejson_cleanup(&fuzz_json_value_doc_map, &path_doc, NULL);
   lonejson_free(runtime_streamed);
   return 0;
 }

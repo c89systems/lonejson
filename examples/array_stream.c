@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
   }
 
   for (;;) {
-    lonejson_init(lj, &issue_event_map, &event);
+    lonejson_init(lj, &issue_event_map, &event, NULL);
     result =
         lonejson_array_stream_next(stream, &issue_event_map, &event, &error);
     if (result == LONEJSON_ARRAY_STREAM_ITEM) {
@@ -51,10 +51,10 @@ int main(int argc, char **argv) {
       priority_total += event.priority;
       printf("%s %s priority=%ld title=%s\n", event.id,
              event.open ? "open" : "closed", (long)event.priority, event.title);
-      lonejson_cleanup(&issue_event_map, &event);
+      lonejson_cleanup(&issue_event_map, &event, NULL);
       continue;
     }
-    lonejson_cleanup(&issue_event_map, &event);
+    lonejson_cleanup(&issue_event_map, &event, NULL);
     break;
   }
 

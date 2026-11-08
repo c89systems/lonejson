@@ -563,64 +563,14 @@ static int ljlua_json_null(lua_State *L) {
 
 typedef struct ljlua_pretty_encode_call {
   ljlua_json_out *out;
-  const void **visited;
-  size_t depth;
-  const ljlua_json_key *keys;
-  size_t count;
   int compact_mode;
   ljlua_json_buf *result;
 } ljlua_pretty_encode_call;
 
-static int ljlua_encode_json_value_pretty(lua_State *L, int index,
-                                          ljlua_json_out *out,
-                                          const void **visited, size_t depth);
-static int ljlua_json_out_write_indent(lua_State *L, ljlua_json_out *out,
-                                       size_t depth);
-
 static int ljlua_pretty_encode_pcall(lua_State *L) {
   ljlua_pretty_encode_call *call =
       (ljlua_pretty_encode_call *)lua_touserdata(L, 1);
-  if (call->keys != NULL) {
-    int table_index = lua_absindex(L, 2);
-    size_t i;
-
-    ljlua_json_out_write(L, call->out, "{", 1u);
-    for (i = 0u; i < call->count; ++i) {
-      lonejson_error error;
-      lonejson_status status;
-
-      ljlua_json_out_write_indent(L, call->out, call->depth + 1u);
-      ljlua_json_out_write(L, call->out, "\"", 1u);
-      memset(&error, 0, sizeof(error));
-      status = ljlua_emit_escaped_fragment(
-          call->out->sink, call->out->user, &error,
-          (const unsigned char *)call->keys[i].text, call->keys[i].len);
-      if (status != LONEJSON_STATUS_OK) {
-        return luaL_error(L, "failed to encode JSON object key: %s",
-                          error.message[0] != '\0'
-                              ? error.message
-                              : lonejson_status_string(status));
-      }
-      ljlua_json_out_write(L, call->out, "\": ", 3u);
-      lua_pushlstring(L, call->keys[i].text, call->keys[i].len);
-      lua_gettable(L, table_index);
-      ljlua_encode_json_value_pretty(L, lua_gettop(L), call->out, call->visited,
-                                     call->depth + 1u);
-      lua_pop(L, 1);
-      if (i + 1u != call->count) {
-        ljlua_json_out_write(L, call->out, ",", 1u);
-      }
-    }
-    return 0;
-  }
-  if (call->compact_mode) {
-    if (ljlua_encode_json_value(L, 2, call->out, call->visited, call->depth) ==
-        0) {
-      return luaL_error(L, "failed to encode JSON value");
-    }
-  } else {
-    ljlua_encode_json_value_pretty(L, 2, call->out, call->visited, call->depth);
-  }
+  ljlua_encode_json_walk(L, 2, call->out, !call->compact_mode);
   if (call->result != NULL) {
     lua_pushlstring(L, call->result->data, call->result->len);
     return 1;
@@ -666,182 +616,11 @@ static int ljlua_json_out_write_indent(lua_State *L, ljlua_json_out *out,
   return 1;
 }
 
-static int ljlua_encode_json_table_pretty(lua_State *L, int index,
-                                          ljlua_json_out *out,
-                                          const void **visited, size_t depth) {
-  const char *shape;
-  size_t i;
-
-  index = lua_absindex(L, index);
-  luaL_checkstack(L, 4, "JSON encoding");
-  shape = ljlua_json_shape(L, index);
-  if (shape != NULL && strcmp(shape, "array") == 0) {
-    size_t n = (size_t)lua_rawlen(L, index);
-
-    if (n == 0u) {
-      return ljlua_json_out_write(L, out, "[]", 2u);
-    }
-    ljlua_json_out_write(L, out, "[", 1u);
-    for (i = 1u; i <= n; ++i) {
-      ljlua_json_out_write_indent(L, out, depth + 1u);
-      lua_rawgeti(L, index, (lua_Integer)i);
-      ljlua_encode_json_value_pretty(L, lua_gettop(L), out, visited,
-                                     depth + 1u);
-      lua_pop(L, 1);
-      if (i != n) {
-        ljlua_json_out_write(L, out, ",", 1u);
-      }
-    }
-    ljlua_json_out_write_indent(L, out, depth);
-    return ljlua_json_out_write(L, out, "]", 1u);
-  }
-  if ((shape != NULL && strcmp(shape, "object") == 0) ||
-      !ljlua_json_table_is_array(L, index)) {
-    ljlua_json_key inline_keys[8];
-    char inline_text[128];
-    ljlua_json_key *keys = inline_keys;
-    size_t count = 0u;
-    size_t capacity = sizeof(inline_keys) / sizeof(inline_keys[0]);
-    size_t inline_used = 0u;
-
-    lua_pushnil(L);
-    while (lua_next(L, index) != 0) {
-      size_t len;
-      const char *key;
-
-      if (lua_type(L, -2) != LUA_TSTRING) {
-        ljlua_free_json_keys(keys, count, inline_keys);
-        lua_pop(L, 2);
-        return luaL_error(L, "JSON object keys must be strings");
-      }
-      key = lua_tolstring(L, -2, &len);
-      if (count == capacity) {
-        capacity *= 2u;
-        if (keys == inline_keys) {
-          keys = (ljlua_json_key *)ljlua_xmalloc(sizeof(*keys) * capacity);
-          memcpy(keys, inline_keys, sizeof(inline_keys));
-        } else {
-          keys =
-              (ljlua_json_key *)ljlua_xrealloc(keys, sizeof(*keys) * capacity);
-        }
-      }
-      ljlua_copy_json_key(&keys[count], key, len, inline_text,
-                          sizeof(inline_text), &inline_used);
-      count++;
-      lua_pop(L, 1);
-    }
-    qsort(keys, count, sizeof(*keys), ljlua_json_key_compare);
-    if (count == 0u) {
-      ljlua_free_json_keys(keys, count, inline_keys);
-      return ljlua_json_out_write(L, out, "{}", 2u);
-    }
-    {
-      ljlua_pretty_encode_call call;
-      int pcall_status;
-
-      memset(&call, 0, sizeof(call));
-      call.out = out;
-      call.visited = visited;
-      call.depth = depth;
-      call.keys = keys;
-      call.count = count;
-      lua_pushcfunction(L, ljlua_pretty_encode_pcall);
-      lua_pushlightuserdata(L, &call);
-      lua_pushvalue(L, index);
-      pcall_status = lua_pcall(L, 2, 0, 0);
-      if (pcall_status != LUA_OK) {
-        ljlua_free_json_keys(keys, count, inline_keys);
-        return lua_error(L);
-      }
-      ljlua_free_json_keys(keys, count, inline_keys);
-      ljlua_json_out_write_indent(L, out, depth);
-      return ljlua_json_out_write(L, out, "}", 1u);
-    }
-  }
-  {
-    size_t n = (size_t)lua_rawlen(L, index);
-
-    if (n == 0u) {
-      return ljlua_json_out_write(L, out, "[]", 2u);
-    }
-    ljlua_json_out_write(L, out, "[", 1u);
-    for (i = 1u; i <= n; ++i) {
-      ljlua_json_out_write_indent(L, out, depth + 1u);
-      lua_rawgeti(L, index, (lua_Integer)i);
-      ljlua_encode_json_value_pretty(L, lua_gettop(L), out, visited,
-                                     depth + 1u);
-      lua_pop(L, 1);
-      if (i != n) {
-        ljlua_json_out_write(L, out, ",", 1u);
-      }
-    }
-    ljlua_json_out_write_indent(L, out, depth);
-    return ljlua_json_out_write(L, out, "]", 1u);
-  }
-}
-
-static int ljlua_encode_json_value_pretty(lua_State *L, int index,
-                                          ljlua_json_out *out,
-                                          const void **visited, size_t depth) {
-  int type;
-  size_t i;
-
-  if (depth > 128u) {
-    return luaL_error(L, "JSON value nesting exceeds Lua binding limit");
-  }
-  index = lua_absindex(L, index);
-  if (ljlua_is_json_null(L, index)) {
-    return ljlua_json_out_write_cstr(L, out, "null");
-  }
-  type = lua_type(L, index);
-  switch (type) {
-  case LUA_TNIL:
-    return ljlua_json_out_write_cstr(L, out, "null");
-  case LUA_TBOOLEAN:
-    return ljlua_json_out_write_cstr(
-        L, out, lua_toboolean(L, index) ? "true" : "false");
-  case LUA_TNUMBER:
-#if defined(LUA_MAXINTEGER)
-    if (lua_isinteger(L, index)) {
-      char num[64];
-      snprintf(num, sizeof(num), "%lld", (long long)lua_tointeger(L, index));
-      return ljlua_json_out_write_cstr(L, out, num);
-    }
-#endif
-    {
-      double num = (double)lua_tonumber(L, index);
-      char text[64];
-
-      if (!ljlua_is_finite_f64(num)) {
-        return luaL_error(L, "JSON numbers must be finite");
-      }
-      snprintf(text, sizeof(text), "%.17g", num);
-      return ljlua_json_out_write_cstr(L, out, text);
-    }
-  case LUA_TSTRING:
-    return ljlua_encode_json_string(L, index, out);
-  case LUA_TTABLE: {
-    const void *ptr = lua_topointer(L, index);
-
-    for (i = 0u; i < depth; ++i) {
-      if (visited[i] == ptr) {
-        return luaL_error(L, "cyclic Lua tables cannot be encoded as JSON");
-      }
-    }
-    visited[depth] = ptr;
-    return ljlua_encode_json_table_pretty(L, index, out, visited, depth);
-  }
-  default:
-    return luaL_error(L, "unsupported Lua type for JSON value");
-  }
-}
-
 static int ljlua_runtime_encode_json_impl(lua_State *L,
                                           ljlua_runtime_ud *runtime_ud,
                                           int value_index) {
   ljlua_json_buf buf;
   ljlua_json_out out;
-  const void *visited[129];
   ljlua_pretty_encode_call call;
   size_t max_output_bytes = 0u;
   int status;
@@ -865,7 +644,7 @@ static int ljlua_runtime_encode_json_impl(lua_State *L,
     output.buf = &buf;
     out.sink = ljlua_scalar_output_sink;
     out.user = &output;
-    ljlua_encode_json_value(L, value_index, &out, NULL, 0u);
+    ljlua_encode_json_value(L, value_index, &out);
     if (buf.len <= 512u) {
       char result[512];
       size_t len = buf.len;
@@ -884,10 +663,8 @@ static int ljlua_runtime_encode_json_impl(lua_State *L,
     }
     return 1;
   }
-  memset(visited, 0, sizeof(visited));
   memset(&call, 0, sizeof(call));
   call.out = &out;
-  call.visited = visited;
   call.compact_mode = runtime_ud == NULL || !runtime_ud->write_pretty;
   call.result = &buf;
   lua_pushcfunction(L, ljlua_pretty_encode_pcall);
@@ -930,14 +707,12 @@ static int ljlua_runtime_encode_json_to_sink_impl(lua_State *L,
                                                   int sink_index) {
   ljlua_json_lua_sink sink;
   ljlua_json_out out;
-  const void *visited[129];
 
   value_index = lua_absindex(L, value_index);
   sink_index = lua_absindex(L, sink_index);
   sink.L = L;
   lua_pushvalue(L, sink_index);
   sink.callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-  memset(visited, 0, sizeof(visited));
   if (runtime_ud != NULL && runtime_ud->write_pretty) {
     ljlua_pretty_encode_call call;
     int status;
@@ -946,8 +721,6 @@ static int ljlua_runtime_encode_json_to_sink_impl(lua_State *L,
     out.user = &sink;
     memset(&call, 0, sizeof(call));
     call.out = &out;
-    call.visited = visited;
-    call.depth = 0u;
     lua_pushcfunction(L, ljlua_pretty_encode_pcall);
     lua_pushlightuserdata(L, &call);
     lua_pushvalue(L, value_index);
@@ -966,8 +739,6 @@ static int ljlua_runtime_encode_json_to_sink_impl(lua_State *L,
 
     memset(&call, 0, sizeof(call));
     call.out = &out;
-    call.visited = visited;
-    call.depth = 0u;
     call.compact_mode = 1;
     lua_pushcfunction(L, ljlua_pretty_encode_pcall);
     lua_pushlightuserdata(L, &call);

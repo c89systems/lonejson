@@ -216,9 +216,18 @@ static lonejson_status lonejson__array_rewrite_begin_parent(
       state->options.parents[parent_index].dst, &state->parse_options,
       state->runtime, 0, 0, 0, 0u, workspace,
       LONEJSON_PUSH_PARSER_BUFFER_SIZE + LONEJSON__PARSER_WORKSPACE_SLACK);
-  lonejson__init_map_with_allocator(state->options.parents[parent_index].map,
-                                    state->options.parents[parent_index].dst,
-                                    &state->allocator, state->runtime);
+  if (!lonejson__init_map_parse(state->parent_runtime[slot].parser,
+                                state->options.parents[parent_index].map,
+                                state->options.parents[parent_index].dst)) {
+    lonejson_status status = state->parent_runtime[slot].parser->error.code;
+    if (state->error != NULL)
+      *state->error = state->parent_runtime[slot].parser->error;
+    lonejson_parser_destroy(state->parent_runtime[slot].parser);
+    lonejson__buffer_free(&state->allocator, state->parent_runtime[slot].parser,
+                          parser_bytes);
+    state->parent_runtime[slot].parser = NULL;
+    return status;
+  }
   state->parent_runtime[slot].parser_alloc_size = parser_bytes;
   state->parent_runtime[slot].parent_index = parent_index;
   state->parent_runtime[slot].active = 1;
@@ -250,7 +259,8 @@ lonejson__array_rewrite_end_parent(lonejson__array_rewrite_state *state,
       state->options.parents[state->parent_runtime[runtime_index].parent_index]
           .map,
       state->options.parents[state->parent_runtime[runtime_index].parent_index]
-          .dst);
+          .dst,
+      NULL);
   lonejson__buffer_free(&state->allocator,
                         state->parent_runtime[runtime_index].parser,
                         state->parent_runtime[runtime_index].parser_alloc_size);
@@ -361,7 +371,7 @@ lonejson__array_rewrite_finish_item(lonejson__array_rewrite_state *state) {
     state->item_dst_initialized = 1;
     cleanup_item_dst = 1;
     if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
-      lonejson_cleanup(state->options.item_map, state->options.item_dst);
+      lonejson_cleanup(state->options.item_map, state->options.item_dst, NULL);
       state->item_dst_initialized = 0;
       return status;
     }
@@ -383,7 +393,8 @@ lonejson__array_rewrite_finish_item(lonejson__array_rewrite_state *state) {
                                  &result, state->error);
     if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
       if (cleanup_item_dst) {
-        lonejson_cleanup(state->options.item_map, state->options.item_dst);
+        lonejson_cleanup(state->options.item_map, state->options.item_dst,
+                         NULL);
         state->item_dst_initialized = 0;
       }
       if (state->error != NULL && state->error->code == LONEJSON_STATUS_OK) {
@@ -436,7 +447,7 @@ lonejson__array_rewrite_finish_item(lonejson__array_rewrite_state *state) {
     break;
   }
   if (cleanup_item_dst) {
-    lonejson_cleanup(state->options.item_map, state->options.item_dst);
+    lonejson_cleanup(state->options.item_map, state->options.item_dst, NULL);
     state->item_dst_initialized = 0;
   }
   if (status == LONEJSON_STATUS_OK && state->truncated) {
@@ -1038,13 +1049,14 @@ lonejson__array_rewrite_cleanup(lonejson__array_rewrite_state *state) {
     if (state->parent_runtime[i].parser != NULL) {
       lonejson_cleanup(
           state->options.parents[state->parent_runtime[i].parent_index].map,
-          state->options.parents[state->parent_runtime[i].parent_index].dst);
+          state->options.parents[state->parent_runtime[i].parent_index].dst,
+          NULL);
       lonejson__buffer_free(&state->allocator, state->parent_runtime[i].parser,
                             state->parent_runtime[i].parser_alloc_size);
     }
   }
   if (state->item_dst_initialized) {
-    lonejson_cleanup(state->options.item_map, state->options.item_dst);
+    lonejson_cleanup(state->options.item_map, state->options.item_dst, NULL);
   }
   lonejson__byte_free(&state->capture, &state->allocator);
   lonejson__array_stream_dup_state_cleanup(&state->dup_state);
@@ -1126,8 +1138,13 @@ static lonejson_status lonejson__array_rewrite_reader_common(
     const lonejson__parse_options *parse_options,
     const lonejson_runtime *runtime,
     const lonejson_array_rewrite_options *options, lonejson_error *error) {
-  lonejson__array_rewrite_state state;
-  lonejson_json_value input;
+  struct lonejson__rewrite_context {
+    lonejson__array_rewrite_state state;
+    lonejson_json_value input;
+  } *context;
+  lonejson__array_rewrite_state *state;
+  lonejson_json_value *input;
+  lonejson_allocator allocator;
   lonejson_value_visitor visitor;
   lonejson__value_limits limits;
   lonejson_status status;
@@ -1171,21 +1188,31 @@ static lonejson_status lonejson__array_rewrite_reader_common(
                                "allocator must provide either all callbacks "
                                "or none");
   }
-  memset(&state, 0, sizeof(state));
-  state.selector = selector != NULL ? selector : "";
-  state.sink = sink;
-  state.sink_user = sink_user;
-  state.error = error;
-  state.runtime = runtime;
-  state.options = *options;
-  state.parse_options = parse_options != NULL
-                            ? *parse_options
-                            : lonejson__default_parse_options();
-  state.allocator = lonejson__allocator_resolve(state.parse_options.allocator);
-  state.dup_state.allocator = &state.allocator;
-  lonejson_json_value_init_with_allocator(&input, &state.allocator);
+  allocator = lonejson__allocator_resolve(
+      parse_options != NULL ? parse_options->allocator : NULL);
+  context = (struct lonejson__rewrite_context *)lonejson__owned_malloc(
+      &allocator, sizeof(*context));
+  if (context == NULL)
+    return lonejson__set_error(error, LONEJSON_STATUS_ALLOCATION_FAILED, 0u, 0u,
+                               0u, "failed to allocate array rewrite context");
+  state = &context->state;
+  input = &context->input;
+  memset(state, 0, sizeof(*state));
+  state->selector = selector != NULL ? selector : "";
+  state->sink = sink;
+  state->sink_user = sink_user;
+  state->error = error;
+  state->runtime = runtime;
+  state->options = *options;
+  state->parse_options = parse_options != NULL
+                             ? *parse_options
+                             : lonejson__default_parse_options();
+  state->allocator =
+      lonejson__allocator_resolve(state->parse_options.allocator);
+  state->dup_state.allocator = &state->allocator;
+  lonejson_json_value_init_with_allocator(input, &state->allocator);
   lonejson__clear_error(error);
-  status = lonejson__array_rewrite_parse_selector(&state, state.selector);
+  status = lonejson__array_rewrite_parse_selector(state, state->selector);
   if (status == LONEJSON_STATUS_OK) {
     visitor = lonejson_default_value_visitor();
     visitor.object_begin = lonejson__array_rewrite_object_begin;
@@ -1203,19 +1230,19 @@ static lonejson_status lonejson__array_rewrite_reader_common(
     visitor.number_end = lonejson__array_rewrite_number_end;
     visitor.boolean_value = lonejson__array_rewrite_boolean;
     visitor.null_value = lonejson__array_rewrite_null;
-    lonejson__array_rewrite_resolve_limits(&state.parse_options, runtime,
+    lonejson__array_rewrite_resolve_limits(&state->parse_options, runtime,
                                            &limits);
-    status = lonejson_json_value_set_reader(&input, reader, reader_user, error);
+    status = lonejson_json_value_set_reader(input, reader, reader_user, error);
     if (status == LONEJSON_STATUS_OK || status == LONEJSON_STATUS_TRUNCATED) {
-      status = lonejson__json_visit(&input, &visitor, &state, &limits, error);
+      status = lonejson__json_visit(input, &visitor, state, &limits, error);
     }
   }
   if ((status == LONEJSON_STATUS_OK || status == LONEJSON_STATUS_TRUNCATED) &&
-      state.selected_array_count == 0u) {
+      state->selected_array_count == 0u) {
     status = lonejson__set_error(error, LONEJSON_STATUS_TYPE_MISMATCH, 0u, 0u,
                                  0u, "selected array was not found");
   }
-  if (status == LONEJSON_STATUS_OK && state.truncated) {
+  if (status == LONEJSON_STATUS_OK && state->truncated) {
     status = LONEJSON_STATUS_TRUNCATED;
   }
   if (status == LONEJSON_STATUS_TRUNCATED && error != NULL) {
@@ -1228,8 +1255,9 @@ static lonejson_status lonejson__array_rewrite_reader_common(
                "array rewrite truncated");
     }
   }
-  lonejson_json_value_cleanup(&input);
-  lonejson__array_rewrite_cleanup(&state);
+  lonejson_json_value_cleanup(input);
+  lonejson__array_rewrite_cleanup(state);
+  lonejson__owned_free(context);
   return status;
 }
 

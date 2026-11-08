@@ -35,7 +35,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(runtime, &query_request_map, &req);
+  lj_init(runtime, &query_request_map, &req, NULL);
   strcpy(req.namespace_, "default");
 
   status = lj_json_value_set_buffer(&req.selector, selector_json,
@@ -49,7 +49,7 @@ int main(void) {
                                     strlen(fields_json), &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "fields setup failed: %s\n", error.message);
-    lj_cleanup(&query_request_map, &req);
+    lj_cleanup(&query_request_map, &req, NULL);
     lj_free(runtime);
     return 1;
   }
@@ -57,7 +57,7 @@ int main(void) {
   json = lj_serialize_alloc(runtime, &query_request_map, &req, NULL, &error);
   if (json == NULL) {
     fprintf(stderr, "serialize failed: %s\n", error.message);
-    lj_cleanup(&query_request_map, &req);
+    lj_cleanup(&query_request_map, &req, NULL);
     lj_free(runtime);
     return 1;
   }
@@ -65,7 +65,7 @@ int main(void) {
   printf("json=%s\n", json);
 
   LONEJSON_FREE(json);
-  lj_cleanup(&query_request_map, &req);
+  lj_cleanup(&query_request_map, &req, NULL);
   lj_free(runtime);
   return 0;
 }

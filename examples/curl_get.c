@@ -104,7 +104,7 @@ int main(void) {
 
   printf("id=%ld message=%s\n", (long)payload.id, payload.message);
   curl_easy_cleanup(curl);
-  lonejson_cleanup(&remote_payload_map, &payload);
+  lonejson_cleanup(&remote_payload_map, &payload, NULL);
   lonejson_curl_parse_cleanup(&parse_ctx);
   lonejson_free(runtime);
   return 0;

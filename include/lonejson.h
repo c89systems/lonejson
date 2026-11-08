@@ -275,7 +275,7 @@ extern "C" {
  *   return;
  * }
  *
- * lonejson_cleanup(&user_doc_map, &doc);
+ * lonejson_cleanup(&user_doc_map, &doc, NULL);
  * lonejson_free(runtime);
  * ```
  *
@@ -305,7 +305,7 @@ extern "C" {
  * for (;;) {
  *   result = lonejson_stream_next(stream, &doc, &error);
  *   if (result == LONEJSON_STREAM_OBJECT) {
- *     lonejson_cleanup(&user_doc_map, &doc);
+ *     lonejson_cleanup(&user_doc_map, &doc, NULL);
  *     continue;
  *   }
  *   if (result == LONEJSON_STREAM_EOF) {
@@ -344,7 +344,7 @@ extern "C" {
  * for (;;) {
  *   result = lonejson_array_stream_next(items, &user_doc_map, &doc, &error);
  *   if (result == LONEJSON_ARRAY_STREAM_ITEM) {
- *     lonejson_cleanup(&user_doc_map, &doc);
+ *     lonejson_cleanup(&user_doc_map, &doc, NULL);
  *     continue;
  *   }
  *   if (result == LONEJSON_ARRAY_STREAM_EOF) {
@@ -425,7 +425,7 @@ extern "C" {
  *
  * lonejson_parse_path(runtime, &blob_doc_map, &doc, "input.json", &error);
  * lonejson_spooled_write_to_sink(&doc.body, sink_fn, sink_user);
- * lonejson_cleanup(&blob_doc_map, &doc);
+ * lonejson_cleanup(&blob_doc_map, &doc, NULL);
  * lonejson_free(runtime);
  * ```
  *
@@ -450,7 +450,7 @@ extern "C" {
  * lonejson_source_set_path(&doc.payload, "payload.bin");
  * lonejson_serialize_path(runtime, &outbound_doc_map, &doc, "request.json",
  *                         &error);
- * lonejson_cleanup(&outbound_doc_map, &doc);
+ * lonejson_cleanup(&outbound_doc_map, &doc, NULL);
  * lonejson_free(runtime);
  * ```
  *
@@ -479,13 +479,13 @@ extern "C" {
  *
  * config.clear_destination_by_default = 0;
  * lj = lonejson_new(&config, &error);
- * lonejson_init(lj, &query_doc_map, &doc);
+ * lonejson_init(lj, &query_doc_map, &doc, NULL);
  * lonejson_json_value_enable_parse_capture(&doc.selector, &error);
  * lonejson_parse_cstr(lj, &query_doc_map, &doc,
  *                     "{\"namespace\":\"ops\",\"selector\":{\"op\":\"and\"}}",
  *                     &error);
  * lonejson_json_value_write_to_sink(&doc.selector, sink_fn, sink_user, &error);
- * lonejson_cleanup(&query_doc_map, &doc);
+ * lonejson_cleanup(&query_doc_map, &doc, NULL);
  * lonejson_free(lj);
  * ```
  *
@@ -526,7 +526,7 @@ extern "C" {
 /** Patch component of the lonejson header version. */
 #define LONEJSON_VERSION_PATCH 0
 /** Shared-library ABI / SONAME version for binary compatibility tracking. */
-#define LONEJSON_ABI_VERSION 27
+#define LONEJSON_ABI_VERSION 28
 
 /** Marks a mapping field as required during parse. */
 #define LONEJSON_FIELD_REQUIRED (1u << 0)
@@ -3134,9 +3134,11 @@ struct lonejson {
       lonejson *runtime, int fd, const lonejson_path_value_visitor *visitor,
       void *user, lonejson_error *error);
   /** Initializes a mapped value according to one schema. */
-  void (*init)(lonejson *runtime, const lonejson_map *map, void *value);
+  lonejson_status (*init)(lonejson *runtime, const lonejson_map *map,
+                          void *value, lonejson_error *error);
   /** Resets a mapped value while preserving caller-owned fixed backing. */
-  void (*reset)(lonejson *runtime, const lonejson_map *map, void *value);
+  lonejson_status (*reset)(lonejson *runtime, const lonejson_map *map,
+                           void *value, lonejson_error *error);
   /** Assigns null to one field in an initialized mapped record. */
   lonejson_status (*record_assign_null)(lonejson *runtime,
                                         const lonejson_map *map, void *record,
@@ -3183,7 +3185,8 @@ struct lonejson {
                                            lonejson_object_array *array,
                                            lonejson_error *error);
   /** Releases dynamic storage owned by one mapped value. */
-  void (*cleanup)(lonejson *runtime, const lonejson_map *map, void *value);
+  lonejson_status (*cleanup)(lonejson *runtime, const lonejson_map *map,
+                             void *value, lonejson_error *error);
   /** Opens an object-framed stream over a reader callback. */
   lonejson_stream *(*stream_open_reader)(lonejson *runtime,
                                          const lonejson_map *map,
@@ -6614,8 +6617,15 @@ lonejson_status lonejson_serialize_jsonl_path(lonejson *runtime,
  * independent: it only releases storage already owned by `value` according to
  * `map` and does not depend on any instance policy. `lonejson` also exposes a
  * method twin for API symmetry on runtime-owned entrypoints.
+ *
+ * Lifecycle operations return a status and optionally fill `error`. Schema
+ * analysis and record traversal use a small inline workspace, growing on the
+ * heap for deep maps. A traversal-workspace allocation failure leaves the
+ * record unchanged; retry cleanup after restoring allocator availability.
+ * Inline object cycles and cyclic record storage are invalid arguments.
  */
-void lonejson_cleanup(const lonejson_map *map, void *value);
+lonejson_status lonejson_cleanup(const lonejson_map *map, void *value,
+                                 lonejson_error *error);
 /** Initializes previously uninitialized mapped storage according to its field
  * descriptors without inspecting its prior contents.
  *
@@ -6628,11 +6638,16 @@ void lonejson_cleanup(const lonejson_map *map, void *value);
  * This is also the right entrypoint when you plan to parse with
  * `clear_destination = 0`, or when you are configuring caller-owned
  * fixed-capacity array backing storage before parse.
+ * Check the returned status before parsing or using any mapped handles.
+ * On traversal-workspace allocation failure, the destination is untouched.
  */
-void lonejson_init(lonejson *runtime, const lonejson_map *map, void *value);
+lonejson_status lonejson_init(lonejson *runtime, const lonejson_map *map,
+                              void *value, lonejson_error *error);
 /** Clears a mapped value while preserving caller-owned fixed-capacity array
- * backing storage. */
-void lonejson_reset(lonejson *runtime, const lonejson_map *map, void *value);
+ * backing storage. Returns a status and optionally fills `error`.
+ * Traversal-workspace allocation failure leaves the record unchanged. */
+lonejson_status lonejson_reset(lonejson *runtime, const lonejson_map *map,
+                               void *value, lonejson_error *error);
 /** Returns non-zero when a field uses a presence flag. Dynamic language
  * bindings can use this to mirror lonejson's nullable scalar semantics without
  * including private implementation headers.
@@ -10789,23 +10804,26 @@ LONEJSON_SHORT_ALIAS_INLINE lj_status lj_serialize_jsonl_path(
                                        error);
 }
 /** Frees dynamic storage owned by a mapped value. */
-LONEJSON_SHORT_ALIAS_INLINE void lj_cleanup(const lj_map *map, void *value) {
-  lonejson_cleanup(map, value);
+LONEJSON_SHORT_ALIAS_INLINE lj_status lj_cleanup(const lj_map *map, void *value,
+                                                 lj_error *error) {
+  return lonejson_cleanup(map, value, error);
 }
 /** Initializes a mapped value according to its field descriptors. Use this
  * instead of manual `memset` when you need a known reusable starting state,
  * when you plan to parse with `clear_destination = 0`, or when you are
  * configuring caller-owned fixed-capacity array backing storage before parse.
  */
-LONEJSON_SHORT_ALIAS_INLINE void lj_init(lonejson *runtime, const lj_map *map,
-                                         void *value) {
-  lonejson_init(runtime, map, value);
+LONEJSON_SHORT_ALIAS_INLINE lj_status lj_init(lonejson *runtime,
+                                              const lj_map *map, void *value,
+                                              lj_error *error) {
+  return lonejson_init(runtime, map, value, error);
 }
 /** Clears a mapped value while preserving caller-owned fixed-capacity array
  * backing storage. */
-LONEJSON_SHORT_ALIAS_INLINE void lj_reset(lonejson *runtime, const lj_map *map,
-                                          void *value) {
-  lonejson_reset(runtime, map, value);
+LONEJSON_SHORT_ALIAS_INLINE lj_status lj_reset(lonejson *runtime,
+                                               const lj_map *map, void *value,
+                                               lj_error *error) {
+  return lonejson_reset(runtime, map, value, error);
 }
 /** Computes the encoded byte length for raw bytes and base64 variant. */
 LONEJSON_SHORT_ALIAS_INLINE lj_status lj_base64_encoded_len(

@@ -50,7 +50,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(runtime, &metric_sample_map, &sample);
+  lj_init(runtime, &metric_sample_map, &sample, NULL);
 
   stream = lj_stream_open_reader(runtime, &metric_sample_map, chunk_reader,
                                  &state, &error);
@@ -69,7 +69,7 @@ int main(void) {
   }
 
   printf("source=%s value=%.2f\n", sample.source, sample.value);
-  lj_cleanup(&metric_sample_map, &sample);
+  lj_cleanup(&metric_sample_map, &sample, NULL);
   lj_stream_close(stream);
   lj_free(runtime);
   return 0;

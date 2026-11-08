@@ -665,7 +665,7 @@ lonejson__begin_array_value(lonejson_parser *parser) {
         case LONEJSON_FIELD_KIND_BOOL_ARRAY:
         case LONEJSON_FIELD_KIND_OBJECT_ARRAY:
           lonejson__reset_present_array_field(
-              field, lonejson__field_ptr(object_ptr, field));
+              parser, field, lonejson__field_ptr(object_ptr, field));
           break;
         default:
           return lonejson__set_error(

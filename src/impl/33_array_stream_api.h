@@ -2031,7 +2031,14 @@ lonejson__array_stream_push_invoke(lonejson__array_stream_state *stream,
 
   status = callback(user, dst);
   if (!stream->record_reuse) {
-    lonejson_cleanup(map, dst);
+    lonejson_status cleanup_status = lonejson_cleanup(map, dst, error);
+    if (status == LONEJSON_STATUS_OK && cleanup_status != LONEJSON_STATUS_OK) {
+      (void)lonejson__array_stream_set_error(
+          stream, cleanup_status, "array stream record cleanup failed");
+      if (error != NULL)
+        *error = stream->public.error;
+      return cleanup_status;
+    }
   }
   if (status != LONEJSON_STATUS_OK) {
     (void)lonejson__array_stream_set_error(stream, status,

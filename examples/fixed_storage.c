@@ -28,7 +28,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(runtime, &event_log_map, &log);
+  lj_init(runtime, &event_log_map, &log, NULL);
   log.codes.items = codes_storage;
   log.codes.capacity = 4;
   log.codes.flags = LJ_ARRAY_FIXED_CAPACITY;
@@ -42,7 +42,7 @@ int main(void) {
 
   printf("name=%s codes=%lu first=%ld\n", log.name,
          (unsigned long)log.codes.count, (long)log.codes.items[0]);
-  lj_cleanup(&event_log_map, &log);
+  lj_cleanup(&event_log_map, &log, NULL);
   lj_free(runtime);
   return 0;
 }

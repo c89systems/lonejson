@@ -84,7 +84,11 @@ int main(void) {
     return 1;
   }
 
-  lonejson_init(lj, &user_doc_map, &doc);
+  if (lonejson_init(lj, &user_doc_map, &doc, &error) != LONEJSON_STATUS_OK) {
+    fprintf(stderr, "%s\n", error.message);
+    lonejson_free(lj);
+    return 1;
+  }
   status = lonejson_parse_cstr(lj, &user_doc_map, &doc,
                               "{\"name\":\"Ada\",\"age\":37}", &error);
   if (status == LONEJSON_STATUS_OK) {
@@ -97,7 +101,7 @@ int main(void) {
     fprintf(stderr, "%s\n", error.message);
   }
 
-  lonejson_cleanup(&user_doc_map, &doc);
+  lonejson_cleanup(&user_doc_map, &doc, NULL);
   lonejson_free(lj);
   return status == LONEJSON_STATUS_OK ? 0 : 1;
 }

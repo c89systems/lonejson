@@ -774,7 +774,7 @@ static void test_custom_allocator_parse_cleanup_and_stream(void) {
   EXPECT(status == LONEJSON_STATUS_OK);
   EXPECT(alloc.stats.alloc_calls > 0u);
   EXPECT(alloc.stats.bytes_live > 0u);
-  lonejson_cleanup(&test_alloc_parse_doc_map, &doc);
+  lonejson_cleanup(&test_alloc_parse_doc_map, &doc, NULL);
   EXPECT(alloc.stats.bytes_live == 0u);
   EXPECT(alloc.stats.free_calls > 0u);
 
@@ -792,7 +792,7 @@ static void test_custom_allocator_parse_cleanup_and_stream(void) {
     memset(&doc, 0, sizeof(doc));
     EXPECT(lonejson_stream_next(stream, &doc, &error) ==
            LONEJSON_STREAM_OBJECT);
-    lonejson_cleanup(&test_alloc_parse_doc_map, &doc);
+    lonejson_cleanup(&test_alloc_parse_doc_map, &doc, NULL);
     lonejson_stream_close(stream);
   }
   EXPECT(alloc.stats.bytes_live == 0u);
@@ -817,7 +817,7 @@ static void test_custom_allocator_misaligned_owned_alloc_is_rejected(void) {
   EXPECT(status == LONEJSON_STATUS_ALLOCATION_FAILED);
   EXPECT(error.code == LONEJSON_STATUS_ALLOCATION_FAILED);
   EXPECT(strstr(error.message, "failed to allocate string") != NULL);
-  lonejson_cleanup(&test_alloc_parse_doc_map, &doc);
+  lonejson_cleanup(&test_alloc_parse_doc_map, &doc, NULL);
 }
 #endif
 
@@ -849,7 +849,7 @@ static void test_custom_allocator_json_value_capture_and_serialize_alloc(void) {
   EXPECT(parse_alloc.stats.alloc_calls > 0u);
   EXPECT(parse_alloc.stats.bytes_live > 0u);
   EXPECT(strcmp(doc.selector.json, "{\"a\":[1,true,null]}") == 0);
-  lonejson_cleanup(&test_alloc_json_value_doc_map, &doc);
+  lonejson_cleanup(&test_alloc_json_value_doc_map, &doc, NULL);
   EXPECT(parse_alloc.stats.bytes_live == 0u);
 
   write_options.allocator = &write_alloc.allocator;
@@ -908,7 +908,7 @@ test_custom_allocator_json_value_default_clear_reparse_releases_capture(void) {
   EXPECT(doc.selector.json != NULL);
   EXPECT(parse_alloc.stats.bytes_live == bytes_after_first_parse);
 
-  lonejson_cleanup(&default_capture_map, &doc);
+  lonejson_cleanup(&default_capture_map, &doc, NULL);
   EXPECT(parse_alloc.stats.bytes_live == 0u);
 }
 
@@ -1004,7 +1004,7 @@ test_custom_allocator_json_value_capture_preserves_handle_allocator(void) {
   EXPECT(parse_alloc.stats.alloc_calls > 0u);
   EXPECT(parse_alloc.stats.bytes_live > 0u);
   EXPECT(strcmp(doc.selector.json, "{\"k\":[1,2,3]}") == 0);
-  lonejson_cleanup(&test_alloc_json_value_doc_map, &doc);
+  lonejson_cleanup(&test_alloc_json_value_doc_map, &doc, NULL);
   EXPECT(parse_alloc.stats.bytes_live == 0u);
 }
 

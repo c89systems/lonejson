@@ -97,7 +97,7 @@ option(LONEJSON_BUILD_WITH_CURL "Build lonejson with curl adapter APIs enabled."
 option(LONEJSON_BUILD_WITH_OPENSSL "Build lonejson with OpenSSL-backed auth/crypto support enabled." OFF)
 option(LONEJSON_BUILD_WITH_JWT "Build lonejson with JWT/JWK auth APIs enabled." OFF)
 option(LONEJSON_BUILD_WITH_OIDC "Build lonejson with OIDC/OAuth2 helper APIs enabled." OFF)
-set(LONEJSON_ABI_VERSION "27" CACHE STRING "Shared-library ABI / SONAME version"
+set(LONEJSON_ABI_VERSION "28" CACHE STRING "Shared-library ABI / SONAME version"
     FORCE)
 
 set(LONEJSON_PUBLIC_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -410,6 +410,12 @@ if(LONEJSON_ENABLE_TSAN)
   add_link_options(-fsanitize=thread)
 endif()
 
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  # Production translation units share the supported default worker-stack budget.
+  set_source_files_properties(src/lonejson.c src/lua/lonejson_lua.c PROPERTIES
+    COMPILE_OPTIONS "-Wframe-larger-than=8192")
+endif()
+
 if(LONEJSON_ENABLE_STACK_USAGE AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
   add_compile_options(-fstack-usage)
 endif()
@@ -584,6 +590,24 @@ if(LONEJSON_BUILD_TESTS)
     lonejson_configure_c_target(lonejson_worker_stack_tests)
     add_test(NAME lonejson_worker_stack_tests COMMAND lonejson_worker_stack_tests)
     list(APPEND LONEJSON_STACK_USAGE_TARGETS lonejson_worker_stack_tests)
+    add_executable(lonejson_record_lifecycle_stack_tests tests/test_record_lifecycle_stack.c)
+    target_link_libraries(lonejson_record_lifecycle_stack_tests PRIVATE lonejson_shared Threads::Threads)
+    lonejson_configure_c_target(lonejson_record_lifecycle_stack_tests)
+    list(APPEND LONEJSON_STACK_USAGE_TARGETS lonejson_record_lifecycle_stack_tests)
+    foreach(operation init reset cleanup parse)
+      add_test(NAME lonejson_record_${operation}_stack_tests
+        COMMAND lonejson_record_lifecycle_stack_tests ${operation} 4096)
+    endforeach()
+    foreach(depth 1 15 16 17 64)
+      add_test(NAME lonejson_record_stack_boundary_${depth}_tests
+        COMMAND lonejson_record_lifecycle_stack_tests init ${depth})
+    endforeach()
+    add_test(NAME lonejson_record_stack_oom_tests
+      COMMAND lonejson_record_lifecycle_stack_tests oom 64)
+    add_test(NAME lonejson_record_stack_cycles_tests
+      COMMAND lonejson_record_lifecycle_stack_tests cycles 64)
+    add_test(NAME lonejson_record_stack_arrays_tests
+      COMMAND lonejson_record_lifecycle_stack_tests arrays 4096)
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME lonejson_bootlin_runtime_tests
@@ -834,6 +858,7 @@ if(LONEJSON_BUILD_TESTS)
       LONEJSON_TEST_LUA_SIMULATE_NO_MAXINTEGER=1)
     target_link_libraries(lonejson_lua_interop_tests PRIVATE
       lonejson_shared
+      Threads::Threads
       "${LONEJSON_TARGET_LUA_LIBRARY}")
     set_target_properties(lonejson_lua_interop_tests PROPERTIES
       BUILD_RPATH "${CMAKE_CURRENT_BINARY_DIR};${LONEJSON_CPKT_ROOT}/lib")

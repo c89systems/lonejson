@@ -98,7 +98,7 @@ int main(void) {
   }
   close(fields_fd);
 
-  lj_init(runtime, &streamed_query_request_map, &req);
+  lj_init(runtime, &streamed_query_request_map, &req, NULL);
   strcpy(req.namespace_, "default");
 
   status = lj_json_value_set_path(&req.selector, selector_path, &error);
@@ -113,7 +113,7 @@ int main(void) {
   status = lj_json_value_set_path(&req.fields, fields_path, &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "fields set_path failed: %s\n", error.message);
-    lj_cleanup(&streamed_query_request_map, &req);
+    lj_cleanup(&streamed_query_request_map, &req, NULL);
     unlink(selector_path);
     unlink(fields_path);
     free(large_fields);
@@ -125,7 +125,7 @@ int main(void) {
                               &error);
   if (pretty == NULL) {
     fprintf(stderr, "serialize failed: %s\n", error.message);
-    lj_cleanup(&streamed_query_request_map, &req);
+    lj_cleanup(&streamed_query_request_map, &req, NULL);
     unlink(selector_path);
     unlink(fields_path);
     free(large_fields);
@@ -139,7 +139,7 @@ int main(void) {
   printf("%.200s...\n", pretty);
 
   LONEJSON_FREE(pretty);
-  lj_cleanup(&streamed_query_request_map, &req);
+  lj_cleanup(&streamed_query_request_map, &req, NULL);
   unlink(selector_path);
   unlink(fields_path);
   free(large_fields);

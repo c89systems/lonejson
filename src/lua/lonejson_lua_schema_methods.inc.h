@@ -73,7 +73,8 @@ static int ljlua_schema_new_record(lua_State *L) {
   record_ud->schema_ref = luaL_ref(L, LUA_REGISTRYINDEX);
   record_ud->cleared = 1;
   luaL_setmetatable(L, LJLUA_RECORD_MT);
-  ljlua_prepare_record_storage(record_ud->schema, ljlua_record_data(record_ud));
+  ljlua_prepare_record_storage(L, record_ud->schema,
+                               ljlua_record_data(record_ud));
   return 1;
 }
 
@@ -201,7 +202,13 @@ static int ljlua_record_count(lua_State *L) {
 
 static int ljlua_record_clear(lua_State *L) {
   ljlua_record_ud *ud = ljlua_check_record(L, 1);
-  lonejson_reset(ud->schema->runtime, &ud->schema->map, ljlua_record_data(ud));
+  do {
+    lonejson_error lifecycle_error;
+    if (lonejson_reset(ud->schema->runtime, &ud->schema->map,
+                       ljlua_record_data(ud),
+                       &lifecycle_error) != LONEJSON_STATUS_OK)
+      return luaL_error(L, "%s", lifecycle_error.message);
+  } while (0);
   ud->cleared = 1;
   return 0;
 }
@@ -350,8 +357,13 @@ static int ljlua_schema_decode_into(lua_State *L) {
   }
   if (ljlua_schema_has_json_value(schema_ud->schema)) {
     if (schema_ud->schema->runtime_ud->clear_destination) {
-      lonejson_reset(schema_ud->schema->runtime, &schema_ud->schema->map,
-                     ljlua_record_data(record_ud));
+      do {
+        lonejson_error lifecycle_error;
+        if (lonejson_reset(schema_ud->schema->runtime, &schema_ud->schema->map,
+                           ljlua_record_data(record_ud),
+                           &lifecycle_error) != LONEJSON_STATUS_OK)
+          return luaL_error(L, "%s", lifecycle_error.message);
+      } while (0);
     }
     ljlua_prepare_record_json_value_capture(
         L, schema_ud->schema, ljlua_record_data(record_ud),
@@ -359,8 +371,13 @@ static int ljlua_schema_decode_into(lua_State *L) {
     runtime = schema_ud->schema->runtime_ud->capture_runtime;
   } else {
     if (schema_ud->schema->runtime_ud->clear_destination) {
-      lonejson_reset(schema_ud->schema->runtime, &schema_ud->schema->map,
-                     ljlua_record_data(record_ud));
+      do {
+        lonejson_error lifecycle_error;
+        if (lonejson_reset(schema_ud->schema->runtime, &schema_ud->schema->map,
+                           ljlua_record_data(record_ud),
+                           &lifecycle_error) != LONEJSON_STATUS_OK)
+          return luaL_error(L, "%s", lifecycle_error.message);
+      } while (0);
     } else if (record_ud->cleared) {
       runtime = schema_ud->schema->runtime_ud->capture_runtime;
     }
@@ -391,7 +408,7 @@ static int ljlua_schema_decode_path(lua_State *L) {
   if (record == NULL) {
     return luaL_error(L, "failed to allocate decode buffer");
   }
-  ljlua_prepare_record_storage(schema_ud->schema, record);
+  ljlua_prepare_record_storage(L, schema_ud->schema, record);
   if (ljlua_schema_has_json_value(schema_ud->schema)) {
     ljlua_decode_context_prepare_table_mode(L, schema_ud->schema, record, &ctx);
     runtime = schema_ud->schema->runtime_ud->capture_runtime;
@@ -433,7 +450,7 @@ static int ljlua_schema_decode_file(lua_State *L) {
   if (record == NULL) {
     return luaL_error(L, "failed to allocate decode buffer");
   }
-  ljlua_prepare_record_storage(schema_ud->schema, record);
+  ljlua_prepare_record_storage(L, schema_ud->schema, record);
   if (ljlua_schema_has_json_value(schema_ud->schema)) {
     ljlua_decode_context_prepare_table_mode(L, schema_ud->schema, record, &ctx);
     runtime = schema_ud->schema->runtime_ud->capture_runtime;
@@ -476,7 +493,7 @@ static int ljlua_schema_decode_fd(lua_State *L) {
   if (record == NULL) {
     return luaL_error(L, "failed to allocate decode buffer");
   }
-  ljlua_prepare_record_storage(schema_ud->schema, record);
+  ljlua_prepare_record_storage(L, schema_ud->schema, record);
   if (ljlua_schema_has_json_value(schema_ud->schema)) {
     ljlua_decode_context_prepare_table_mode(L, schema_ud->schema, record, &ctx);
     runtime = schema_ud->schema->runtime_ud->capture_runtime;
@@ -519,7 +536,7 @@ static int ljlua_schema_decode(lua_State *L) {
   memset(&ctx, 0, sizeof(ctx));
   runtime = schema_ud->schema->runtime;
   ljlua_reject_legacy_options(L, 3, "schema:decode");
-  ljlua_prepare_record_storage(schema_ud->schema, record);
+  ljlua_prepare_record_storage(L, schema_ud->schema, record);
   if (ljlua_schema_has_json_value(schema_ud->schema)) {
     ljlua_decode_context_prepare_table_mode(L, schema_ud->schema, record, &ctx);
     runtime = schema_ud->schema->runtime_ud->capture_runtime;
@@ -562,8 +579,13 @@ static int ljlua_schema_assign(lua_State *L) {
   if (record_ud->schema != schema_ud->schema) {
     return luaL_error(L, "record belongs to a different schema");
   }
-  lonejson_reset(schema_ud->schema->runtime, &schema_ud->schema->map,
-                 ljlua_record_data(record_ud));
+  do {
+    lonejson_error lifecycle_error;
+    if (lonejson_reset(schema_ud->schema->runtime, &schema_ud->schema->map,
+                       ljlua_record_data(record_ud),
+                       &lifecycle_error) != LONEJSON_STATUS_OK)
+      return luaL_error(L, "%s", lifecycle_error.message);
+  } while (0);
   record_ud->cleared = 1;
   ljlua_assign_table_to_record(L, schema_ud->schema,
                                ljlua_record_data(record_ud), 3);
@@ -683,7 +705,7 @@ static int ljlua_assign_scratch(lua_State *L, ljlua_schema *schema,
   memset(&call, 0, sizeof(call));
   call.schema = schema;
   call.record = record;
-  ljlua_prepare_record_storage(schema, record);
+  ljlua_prepare_record_storage(L, schema, record);
   status = ljlua_scratch_protected(L, ljlua_scratch_assign_pcall, &call, index);
   if (status != LUA_OK) {
     ljlua_cleanup_record_storage(schema, record);
@@ -716,7 +738,7 @@ static int ljlua_schema_encode(lua_State *L) {
 
     /* Inline-only records need no native cleanup across Lua errors and remain
      * independent during reentrant table access. */
-    ljlua_prepare_record_storage(schema_ud->schema, record.bytes);
+    ljlua_prepare_record_storage(L, schema_ud->schema, record.bytes);
     ljlua_assign_table_to_record(L, schema_ud->schema, record.bytes, 2);
     json = ljlua_serialize_value(L, schema_ud->schema, record.bytes, &out_len);
   } else {
@@ -732,7 +754,7 @@ static int ljlua_schema_encode(lua_State *L) {
     memset(&call, 0, sizeof(call));
     call.schema = schema_ud->schema;
     call.record = record;
-    ljlua_prepare_record_storage(schema_ud->schema, record);
+    ljlua_prepare_record_storage(L, schema_ud->schema, record);
     call_status =
         ljlua_scratch_protected(L, ljlua_scratch_encode_pcall, &call, 2);
     ljlua_cleanup_record_storage(schema_ud->schema, record);

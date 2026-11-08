@@ -27,7 +27,7 @@ int main(void) {
     return 1;
   }
 
-  lonejson_init(lj, &api_response_map, &response);
+  lonejson_init(lj, &api_response_map, &response, NULL);
   response.message = "created";
   response.code = 201;
   response.retry = false;

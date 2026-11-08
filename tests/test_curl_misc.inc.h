@@ -111,7 +111,7 @@ static void test_curl_upload_rewind_one_shot(void) {
                         "\"payload\":[1,2]}}") == 0);
   EXPECT(upload.seek_callback(&upload, 0, SEEK_SET) == CURL_SEEKFUNC_CANTSEEK);
   upload.cleanup(&upload);
-  lonejson_cleanup(&test_nested_json_value_doc_map, &doc);
+  lonejson_cleanup(&test_nested_json_value_doc_map, &doc, NULL);
 }
 
 typedef struct test_curl_array_doc {
@@ -319,7 +319,7 @@ static void test_curl_upload_streaming_does_not_buffer_payload(void) {
   runtime = lonejson_new(&config, NULL);
   EXPECT(runtime != NULL);
   if (runtime == NULL) {
-    lonejson_cleanup(&test_source_doc_map, &doc);
+    lonejson_cleanup(&test_source_doc_map, &doc, NULL);
     return;
   }
   runtime_bytes_live = write_alloc.stats.bytes_live;
@@ -387,7 +387,7 @@ static void test_curl_upload_streaming_does_not_buffer_payload(void) {
   EXPECT(write_alloc.stats.bytes_live == runtime_bytes_live);
   lonejson_free(runtime);
   EXPECT(write_alloc.stats.bytes_live == 0u);
-  lonejson_cleanup(&test_source_doc_map, &doc);
+  lonejson_cleanup(&test_source_doc_map, &doc, NULL);
   unlink(path);
 }
 
@@ -414,7 +414,7 @@ static void test_curl_parse_survives_runtime_free(void) {
     return;
   }
 
-  lonejson_init(runtime, &test_nested_json_value_doc_map, &doc);
+  lonejson_init(runtime, &test_nested_json_value_doc_map, &doc, NULL);
   EXPECT(lonejson_json_value_enable_parse_capture(
              &doc.response.payload, &error) == LONEJSON_STATUS_OK);
   EXPECT(lonejson_curl_parse_init(&parse, runtime,
@@ -441,7 +441,7 @@ static void test_curl_parse_survives_runtime_free(void) {
   EXPECT(strcmp((char *)sink_bytes, "{\"value\":\"abc\"}") == 0);
 
   lonejson_curl_parse_cleanup(&parse);
-  lonejson_cleanup(&test_nested_json_value_doc_map, &doc);
+  lonejson_cleanup(&test_nested_json_value_doc_map, &doc, NULL);
 }
 
 static void test_curl_parse_reinit_releases_previous_parser(void) {
@@ -470,7 +470,7 @@ static void test_curl_parse_reinit_releases_previous_parser(void) {
     return;
   }
 
-  lonejson_init(runtime, &test_nested_json_value_doc_map, &doc0);
+  lonejson_init(runtime, &test_nested_json_value_doc_map, &doc0, NULL);
   EXPECT(lonejson_json_value_enable_parse_capture(
              &doc0.response.payload, &error) == LONEJSON_STATUS_OK);
   EXPECT(lonejson_curl_parse_init(&parse, runtime,
@@ -479,7 +479,7 @@ static void test_curl_parse_reinit_releases_previous_parser(void) {
   alloc_after_first = g_lonejson_alloc_calls;
   EXPECT(alloc_after_first > 0u);
 
-  lonejson_init(runtime, &test_nested_json_value_doc_map, &doc1);
+  lonejson_init(runtime, &test_nested_json_value_doc_map, &doc1, NULL);
   EXPECT(lonejson_json_value_enable_parse_capture(
              &doc1.response.payload, &error) == LONEJSON_STATUS_OK);
   EXPECT(lonejson_curl_parse_init(&parse, runtime,
@@ -489,8 +489,8 @@ static void test_curl_parse_reinit_releases_previous_parser(void) {
   EXPECT(g_alloc_record_count > 0u);
 
   lonejson_curl_parse_cleanup(&parse);
-  lonejson_cleanup(&test_nested_json_value_doc_map, &doc0);
-  lonejson_cleanup(&test_nested_json_value_doc_map, &doc1);
+  lonejson_cleanup(&test_nested_json_value_doc_map, &doc0, NULL);
+  lonejson_cleanup(&test_nested_json_value_doc_map, &doc1, NULL);
   lonejson_free(runtime);
   EXPECT(g_alloc_record_count == 0u);
 }
@@ -503,7 +503,7 @@ static void test_curl_parse_init_accepts_poisoned_stack_state(void) {
 
   memset(&parse, 0xA5, sizeof(parse));
   memset(&doc, 0, sizeof(doc));
-  lonejson_init(test_default_runtime(), &test_event_map, &doc);
+  lonejson_init(test_default_runtime(), &test_event_map, &doc, NULL);
 
   EXPECT(lonejson_curl_parse_init(&parse, test_default_runtime(),
                                   &test_event_map, &doc) == LONEJSON_STATUS_OK);
@@ -514,7 +514,7 @@ static void test_curl_parse_init_accepts_poisoned_stack_state(void) {
   EXPECT(doc.ok);
 
   lonejson_curl_parse_cleanup(&parse);
-  lonejson_cleanup(&test_event_map, &doc);
+  lonejson_cleanup(&test_event_map, &doc, NULL);
 }
 
 typedef struct test_curl_array_seen {
@@ -933,14 +933,14 @@ static int test_child_parse_poisoned_stream_and_json_value_fields(void) {
   stream_doc.body.memory = (unsigned char *)1;
   stream_doc.body.spill_fp = (FILE *)1;
   test_init_map(&test_alloc_parse_doc_map, &stream_doc);
-  lonejson_cleanup(&test_alloc_parse_doc_map, &stream_doc);
+  lonejson_cleanup(&test_alloc_parse_doc_map, &stream_doc, NULL);
 
   memset(&json_doc, 0xA5, sizeof(json_doc));
   json_doc.selector._lonejson_magic = LONEJSON__JSON_VALUE_MAGIC;
   json_doc.selector.json = (char *)1;
   json_doc.selector.path = (char *)1;
   test_init_map(&test_alloc_json_value_doc_map, &json_doc);
-  lonejson_cleanup(&test_alloc_json_value_doc_map, &json_doc);
+  lonejson_cleanup(&test_alloc_json_value_doc_map, &json_doc, NULL);
   return 0;
 }
 
@@ -991,5 +991,5 @@ static void test_prepared_fixed_object_array_parse_preserves_storage(void) {
   EXPECT(strcmp(run.result_storage[0].group, "parse") == 0);
   EXPECT(strcmp(run.result_storage[1].name, "serialize/sink/lonejson") == 0);
   EXPECT(strcmp(run.result_storage[1].group, "serialize") == 0);
-  lonejson_cleanup(&test_fixed_result_run_map, &run);
+  lonejson_cleanup(&test_fixed_result_run_map, &run, NULL);
 }

@@ -24,13 +24,13 @@ int main(void) {
   fields[0] = test_large_fixed_string_doc_fields[0];
   EXPECT(lonejson__map_layout_is_valid(&map));
   EXPECT(!lonejson__map_may_allocate(&map));
-  EXPECT(lonejson__map_adopt_mask(&map) == 0u);
+  EXPECT(lonejson__map_analysis_cached(&map).adopt_mask == 0u);
 
   fields[0] = test_alloc_parse_doc_fields[0];
   map.struct_size = sizeof(test_alloc_parse_doc);
   EXPECT(lonejson__map_layout_is_valid(&map));
   EXPECT(lonejson__map_may_allocate(&map));
-  EXPECT(lonejson__map_adopt_mask(&map) == 1u);
+  EXPECT(lonejson__map_analysis_cached(&map).adopt_mask == 1u);
 
   fields[0].struct_offset = sizeof(test_alloc_parse_doc);
   EXPECT(!lonejson__map_layout_is_valid(&map));

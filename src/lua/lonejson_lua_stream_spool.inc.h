@@ -204,8 +204,13 @@ static int ljlua_array_stream_next(lua_State *L) {
     }
     if (ljlua_schema_has_json_value(ud->schema)) {
       if (ud->clear_destination) {
-        lonejson_reset(ud->schema->runtime, &ud->schema->map,
-                       ljlua_record_data(record_ud));
+        do {
+          lonejson_error lifecycle_error;
+          if (lonejson_reset(ud->schema->runtime, &ud->schema->map,
+                             ljlua_record_data(record_ud),
+                             &lifecycle_error) != LONEJSON_STATUS_OK)
+            return luaL_error(L, "%s", lifecycle_error.message);
+        } while (0);
       }
       ljlua_prepare_record_json_value_capture(L, ud->schema,
                                               ljlua_record_data(record_ud),
@@ -229,7 +234,7 @@ static int ljlua_array_stream_next(lua_State *L) {
         return luaL_error(L, "failed to allocate decode buffer");
       }
       memset(ctx, 0, sizeof(*ctx));
-      ljlua_prepare_record_storage(ud->schema, record);
+      ljlua_prepare_record_storage(L, ud->schema, record);
       if (ljlua_schema_has_json_value(ud->schema)) {
         ljlua_decode_context_prepare_table_mode(L, ud->schema, record, ctx);
       }
@@ -318,14 +323,24 @@ static int ljlua_stream_next(lua_State *L) {
     }
     if (ud->clear_destination &&
         ud->prepared_record != ljlua_record_data(record_ud)) {
-      lonejson_reset(ud->schema->runtime, &ud->schema->map,
-                     ljlua_record_data(record_ud));
+      do {
+        lonejson_error lifecycle_error;
+        if (lonejson_reset(ud->schema->runtime, &ud->schema->map,
+                           ljlua_record_data(record_ud),
+                           &lifecycle_error) != LONEJSON_STATUS_OK)
+          return luaL_error(L, "%s", lifecycle_error.message);
+      } while (0);
     }
     ud->prepared_record = ljlua_record_data(record_ud);
     if (ljlua_schema_has_json_value(ud->schema)) {
       if (ud->clear_destination) {
-        lonejson_reset(ud->schema->runtime, &ud->schema->map,
-                       ljlua_record_data(record_ud));
+        do {
+          lonejson_error lifecycle_error;
+          if (lonejson_reset(ud->schema->runtime, &ud->schema->map,
+                             ljlua_record_data(record_ud),
+                             &lifecycle_error) != LONEJSON_STATUS_OK)
+            return luaL_error(L, "%s", lifecycle_error.message);
+        } while (0);
       }
       ljlua_prepare_record_json_value_capture(L, ud->schema,
                                               ljlua_record_data(record_ud),
@@ -349,7 +364,7 @@ static int ljlua_stream_next(lua_State *L) {
       return luaL_error(L, "failed to allocate decode buffer");
     }
     memset(&ctx, 0, sizeof(ctx));
-    ljlua_prepare_record_storage(ud->schema, record);
+    ljlua_prepare_record_storage(L, ud->schema, record);
     if (ljlua_schema_has_json_value(ud->schema)) {
       ljlua_decode_context_prepare_table_mode(L, ud->schema, record, &ctx);
     }
@@ -1014,7 +1029,7 @@ static int ljlua_array_rewrite_parse_options_impl(
         lua_pop(L, 2);
         return luaL_error(L, "failed to allocate array rewrite parent record");
       }
-      ljlua_prepare_record_storage(schema_ud->schema,
+      ljlua_prepare_record_storage(L, schema_ud->schema,
                                    ctx->parent_states[i].record);
       ctx->parents[i].map = &schema_ud->schema->map;
       ctx->parents[i].dst = ctx->parent_states[i].record;

@@ -206,6 +206,16 @@ Its document and output buffers live on the heap. The musl run checks the defaul
 128 KiB worker stack; unoptimized builds use ordinary inlining to avoid expanding
 recursive serializer frames. Optimized builds retain the existing forced inlining.
 
+The record lifecycle regressions run initialization, reset, cleanup and parsing
+against 4,096 nested maps on a default worker stack. They also cover recursive
+object arrays, inline-workspace boundaries, invalid cycles and allocation
+failure with retry. Lua interop exercises fresh states through depth 128,
+rejection beyond the limit, callback errors and allocator failures.
+
+GCC and Clang builds reject production C and Lua binding frames larger than
+8 KiB. This compiler guard complements the worker tests: small recursive frames
+can still exhaust a thread stack, so the whole active call chain matters.
+
 `make test` is intentionally broader than raw CTest: it configures and builds
 the debug tree, stages standalone examples, runs the debug CTest preset, and
 then runs the full-feature Lua integration test through `make lua-test` on

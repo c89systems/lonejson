@@ -4,6 +4,7 @@
 #include <lua.h>
 #include <lualib.h>
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,6 +85,89 @@ static void require_lonejson(lua_State *L, const char *source_dir) {
   lua_remove(L, -2);
   lua_setfield(L, -2, "path");
   lua_pop(L, 1);
+}
+
+static void *json_stack_worker(void *user) {
+  const char *source_dir = (const char *)user;
+  static const int depths[] = {1, 64, 127, 128, 129};
+  size_t depth_index;
+  int shape;
+
+  for (shape = 0; shape < 3; ++shape) {
+    for (depth_index = 0u; depth_index < sizeof(depths) / sizeof(depths[0]);
+         ++depth_index) {
+      lua_State *L = luaL_newstate();
+      if (L == NULL) {
+        expect_true(0, "fresh worker Lua state");
+        return NULL;
+      }
+      require_lonejson(L, source_dir);
+      fprintf(stderr, "JSON worker shape=%d depth=%d\n", shape,
+              depths[depth_index]);
+      lua_pushinteger(L, shape);
+      lua_setglobal(L, "json_shape");
+      lua_pushinteger(L, depths[depth_index]);
+      lua_setglobal(L, "json_depth");
+      /* Deliberately do not reserve VM slots in the embedding application. */
+      expect_true(
+          run_lua(
+              L,
+              "local j = require('lonejson')\n"
+              "local text = '0'\n"
+              "for i = 1, json_depth do\n"
+              "  if json_shape == 1 or (json_shape == 2 and i % 2 == 0) then\n"
+              "    text = '{\"x\":' .. text .. '}'\n"
+              "  else text = '[' .. text .. ']' end\n"
+              "end\n"
+              "for attempt = 1, 3 do\n"
+              "  local ok, value = pcall(j.decode_json, text)\n"
+              "  if json_depth > 128 then\n"
+              "    assert(not ok and tostring(value):find('nesting exceeds', "
+              "1, true))\n"
+              "  else\n"
+              "    assert(ok, value)\n"
+              "    assert(j.encode_json(value, {pretty = false}) == text)\n"
+              "    local pretty = j.new({write_pretty = true})\n"
+              "    "
+              "assert(j.encode_json(j.decode_json(pretty.encode_json(value))) "
+              "== text)\n"
+              "    local bad = pcall(j.decode_json, text:sub(1, -2))\n"
+              "    assert(not bad)\n"
+              "  end\n"
+              "  assert(j.decode_json('{\"ok\":true}').ok)\n"
+              "  assert(not pcall(j.decode_json, string.rep('[', 129) .. "
+              "string.rep(']', 129)))\n"
+              "  local too_deep = {}; for i = 1, 128 do too_deep = {too_deep} "
+              "end\n"
+              "  assert(not pcall(j.encode_json, too_deep))\n"
+              "  collectgarbage('collect')\n"
+              "  local nested = { [string.rep('long', 64)] = 1 }\n"
+              "  for i = 1, 40 do nested = {x = nested, [string.rep('key', i)] "
+              "= i} end\n"
+              "  local encoded = j.encode_json(nested)\n"
+              "  assert(j.encode_json(j.decode_json(encoded)) == encoded)\n"
+              "  nested.self = nested; assert(not pcall(j.encode_json, "
+              "nested))\n"
+              "  collectgarbage('collect')\n"
+              "end\n") == 0,
+          "fresh-state worker JSON round trip and recovery");
+      lua_close(L);
+      if (failures != 0) {
+        return NULL;
+      }
+    }
+  }
+  return NULL;
+}
+
+static void test_json_worker_stack(const char *source_dir) {
+  pthread_t worker;
+  int status =
+      pthread_create(&worker, NULL, json_stack_worker, (void *)source_dir);
+  expect_true(status == 0, "create default-stack Lua worker");
+  if (status == 0) {
+    expect_true(pthread_join(worker, NULL) == 0, "join Lua worker");
+  }
 }
 
 static void push_global(lua_State *L, const char *name) {
@@ -314,6 +398,9 @@ static void test_encoder_lua_allocation_failure(lua_State *L) {
           status == LUA_ERRRUN && allocator.remaining == 0u &&
           lua_isstring(L, -1) &&
           strstr(lua_tostring(L, -1), "stack overflow") != NULL;
+      if (status != LUA_OK && status != LUA_ERRMEM && !stack_allocation_failed)
+        fprintf(stderr, "encoder OOM case %d budget %lu: %s\n", case_index,
+                (unsigned long)budget, lua_tostring(L, -1));
       expect_true(status == LUA_OK || status == LUA_ERRMEM ||
                       stack_allocation_failed,
                   "encoder returns a result or Lua memory error");
@@ -335,11 +422,76 @@ static void test_encoder_lua_allocation_failure(lua_State *L) {
   lua_setglobal(L, "encode_oom_cases");
 }
 
+static void test_decoder_lua_allocation_failure(const char *source_dir) {
+  int shape;
+  for (shape = 0; shape < 3; ++shape) {
+    size_t budget;
+    int saw_failure = 0;
+    int saw_success = 0;
+    for (budget = 0u; budget <= 2048u;
+         budget += budget < 16u ? 1u : (budget < 256u ? 16u : 64u)) {
+      lua_State *L = luaL_newstate();
+      failing_lua_allocator allocator;
+      int status;
+      expect_true(L != NULL, "fresh decoder OOM state");
+      if (L == NULL)
+        return;
+      require_lonejson(L, source_dir);
+      lua_pushinteger(L, shape);
+      lua_setglobal(L, "oom_shape");
+      if (run_lua(L,
+                  "local j = require('lonejson')\n"
+                  "decode_oom_function = j.decode_json\n"
+                  "decode_oom_text = '0'\n"
+                  "for i = 1, 128 do\n"
+                  "  local object = oom_shape == 1 or (oom_shape == 2 and i % "
+                  "2 == 0)\n"
+                  "  decode_oom_text = object and ('{\"x\":' .. "
+                  "decode_oom_text .. '}') or ('[' .. decode_oom_text .. ']')\n"
+                  "end\n") != 0) {
+        ++failures;
+        lua_close(L);
+        return;
+      }
+      lua_getglobal(L, "decode_oom_function");
+      lua_getglobal(L, "decode_oom_text");
+      lua_gc(L, LUA_GCCOLLECT, 0);
+      allocator.delegate = lua_getallocf(L, &allocator.delegate_user);
+      allocator.remaining = budget;
+      lua_setallocf(L, fail_lua_allocation, &allocator);
+      status = lua_pcall(L, 1, 1, 0);
+      lua_setallocf(L, allocator.delegate, allocator.delegate_user);
+      expect_true(
+          status == LUA_OK || status == LUA_ERRMEM ||
+              (status == LUA_ERRRUN && allocator.remaining == 0u &&
+               strstr(lua_tostring(L, -1), "stack overflow") != NULL),
+          "decoder reports allocation failure without corrupting state");
+      if (status == LUA_OK) {
+        ++saw_success;
+        expect_true(lua_istable(L, -1), "decoder returns the nested table");
+      } else
+        ++saw_failure;
+      lua_pop(L, 1);
+      expect_true(run_lua(L, "local j = require('lonejson'); "
+                             "assert(j.decode_json('{\"ok\":true}').ok); "
+                             "collectgarbage('collect')") == 0,
+                  "decoder recovers after allocation failure");
+      lua_close(L);
+    }
+    expect_true(saw_failure && saw_success,
+                "decoder OOM budgets cover failure and success");
+  }
+}
+
 int main(int argc, char **argv) {
   lua_State *L;
 
   if (argc != 2) {
     fprintf(stderr, "usage: %s <source-dir>\n", argv[0]);
+    return 1;
+  }
+  test_json_worker_stack(argv[1]);
+  if (failures != 0) {
     return 1;
   }
   L = luaL_newstate();
@@ -350,6 +502,7 @@ int main(int argc, char **argv) {
   require_lonejson(L, argv[1]);
   test_interop(L);
   test_encoder_lua_allocation_failure(L);
+  test_decoder_lua_allocation_failure(argv[1]);
   lua_close(L);
   if (failures != 0) {
     fprintf(stderr, "%d Lua interop test failure(s)\n", failures);
