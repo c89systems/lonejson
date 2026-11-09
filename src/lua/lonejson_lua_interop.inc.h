@@ -94,7 +94,8 @@ lonejson_status lonejson_lua_new_record(lua_State *L, int schema_index,
   record_ud->schema_ref = luaL_ref(L, LUA_REGISTRYINDEX);
   record_ud->cleared = 1;
   luaL_setmetatable(L, LJLUA_RECORD_MT);
-  ljlua_prepare_record_storage(record_ud->schema, ljlua_record_data(record_ud));
+  ljlua_prepare_record_storage(L, record_ud->schema,
+                               ljlua_record_data(record_ud));
   out->schema.size = sizeof(out->schema);
   out->schema.abi_version = LONEJSON_VIEW_ABI_VERSION;
   ljlua_fill_record_view(record_ud, out);
@@ -153,8 +154,14 @@ lonejson_status lonejson_lua_clear_record(lua_State *L, int record_index,
   if (record_ud == NULL || record_ud->schema == NULL) {
     return ljlua_schema_view_error(error, "Lua value is not a lonejson record");
   }
-  lonejson_reset(record_ud->schema->runtime, &record_ud->schema->map,
-                 ljlua_record_data(record_ud));
+  do {
+    lonejson_error lifecycle_error;
+    if (lonejson_reset(record_ud->schema->runtime, &record_ud->schema->map,
+                       ljlua_record_data(record_ud),
+                       &lifecycle_error) != LONEJSON_STATUS_OK)
+      return ljlua_set_error(error, lifecycle_error.code,
+                             lifecycle_error.message);
+  } while (0);
   record_ud->cleared = 1;
   if (error != NULL) {
     lonejson_error_init(error);
@@ -189,16 +196,28 @@ ljlua_parse_reader_into_record_ud(lua_State *L, ljlua_record_ud *record_ud,
   runtime = record_ud->schema->runtime;
   if (ljlua_schema_has_json_value(record_ud->schema)) {
     if (record_ud->schema->runtime_ud->clear_destination) {
-      lonejson_reset(record_ud->schema->runtime, &record_ud->schema->map,
-                     ljlua_record_data(record_ud));
+      do {
+        lonejson_error lifecycle_error;
+        if (lonejson_reset(record_ud->schema->runtime, &record_ud->schema->map,
+                           ljlua_record_data(record_ud),
+                           &lifecycle_error) != LONEJSON_STATUS_OK)
+          return ljlua_set_error(error, lifecycle_error.code,
+                                 lifecycle_error.message);
+      } while (0);
     }
     ljlua_prepare_record_json_value_capture(
         L, record_ud->schema, ljlua_record_data(record_ud),
         record_ud->schema->runtime_ud->clear_destination ? 0 : 1);
     runtime = record_ud->schema->runtime_ud->capture_runtime;
   } else if (record_ud->schema->runtime_ud->clear_destination) {
-    lonejson_reset(record_ud->schema->runtime, &record_ud->schema->map,
-                   ljlua_record_data(record_ud));
+    do {
+      lonejson_error lifecycle_error;
+      if (lonejson_reset(record_ud->schema->runtime, &record_ud->schema->map,
+                         ljlua_record_data(record_ud),
+                         &lifecycle_error) != LONEJSON_STATUS_OK)
+        return ljlua_set_error(error, lifecycle_error.code,
+                               lifecycle_error.message);
+    } while (0);
   } else if (record_ud->cleared) {
     runtime = record_ud->schema->runtime_ud->capture_runtime;
   }
@@ -217,7 +236,7 @@ lonejson_lua_parse_reader_to_record(lua_State *L, int schema_index,
                                     int *record_index, lonejson_error *error) {
   lonejson_record_view view;
   lonejson_status status;
-  int index;
+  int index = 0;
   ljlua_record_ud *record_ud;
 
   view.size = sizeof(view);
@@ -268,7 +287,7 @@ lonejson_lua_parse_reader_to_table(lua_State *L, int schema_index,
     return ljlua_set_error(error, LONEJSON_STATUS_ALLOCATION_FAILED, "%s",
                            "failed to allocate decode buffer");
   }
-  ljlua_prepare_record_storage(schema_ud->schema, record);
+  ljlua_prepare_record_storage(L, schema_ud->schema, record);
   if (ljlua_schema_has_json_value(schema_ud->schema)) {
     ljlua_decode_context_prepare_table_mode(L, schema_ud->schema, record, &ctx);
     runtime = schema_ud->schema->runtime_ud->capture_runtime;

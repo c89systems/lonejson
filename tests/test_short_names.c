@@ -96,10 +96,10 @@ int main(void) {
   char short_json[128];
   char long_json[128];
 
-  lj_init(short_runtime(), &short_doc_map, &doc);
-  lj_init(short_runtime(), &short_parse_doc_map, &short_record);
-  lonejson_init(short_runtime(), &short_parse_doc_map, &long_record);
-  lj_init(short_runtime(), &short_stream_doc_map, &stream_doc);
+  lj_init(short_runtime(), &short_doc_map, &doc, NULL);
+  lj_init(short_runtime(), &short_parse_doc_map, &short_record, NULL);
+  lonejson_init(short_runtime(), &short_parse_doc_map, &long_record, NULL);
+  lj_init(short_runtime(), &short_stream_doc_map, &stream_doc, NULL);
   if (macro_string_stream.set_handler !=
           lonejson_string_array_stream_set_handler ||
       macro_mapped_stream.set_handler !=
@@ -127,7 +127,7 @@ int main(void) {
   }
   status = lj_serialize_buffer(short_runtime(), &short_doc_map, &doc, buffer,
                                sizeof(buffer), NULL, &error);
-  lj_cleanup(&short_doc_map, &doc);
+  lj_cleanup(&short_doc_map, &doc, NULL);
   unlink(path);
   if (status != LJ_STATUS_OK) {
     return 1;
@@ -144,15 +144,15 @@ int main(void) {
   status = lonejson_parse_cstr(short_runtime(), &short_parse_doc_map,
                                &long_record, parse_json, &error);
   if (status != LONEJSON_STATUS_OK) {
-    lj_cleanup(&short_parse_doc_map, &short_record);
-    lonejson_cleanup(&short_parse_doc_map, &long_record);
+    lj_cleanup(&short_parse_doc_map, &short_record, NULL);
+    lonejson_cleanup(&short_parse_doc_map, &long_record, NULL);
     return 1;
   }
   if (strcmp(short_record.name, long_record.name) != 0 ||
       short_record.age != long_record.age ||
       short_record.active != long_record.active) {
-    lj_cleanup(&short_parse_doc_map, &short_record);
-    lonejson_cleanup(&short_parse_doc_map, &long_record);
+    lj_cleanup(&short_parse_doc_map, &short_record, NULL);
+    lonejson_cleanup(&short_parse_doc_map, &long_record, NULL);
     return 1;
   }
 
@@ -164,9 +164,9 @@ int main(void) {
   status = lj_string_array_stream_set_handler(&stream_doc.keys, &stream_handler,
                                               &stream_seen, &error);
   if (status != LJ_STATUS_OK) {
-    lj_cleanup(&short_parse_doc_map, &short_record);
-    lonejson_cleanup(&short_parse_doc_map, &long_record);
-    lj_cleanup(&short_stream_doc_map, &stream_doc);
+    lj_cleanup(&short_parse_doc_map, &short_record, NULL);
+    lonejson_cleanup(&short_parse_doc_map, &long_record, NULL);
+    lj_cleanup(&short_stream_doc_map, &stream_doc, NULL);
     return 1;
   }
   status = lj_parse_cstr(short_runtime(), &short_stream_doc_map, &stream_doc,
@@ -174,9 +174,9 @@ int main(void) {
   if (status != LJ_STATUS_OK || stream_seen.begins != 2u ||
       stream_seen.ends != 2u || stream_seen.chunks == 0u ||
       stream_doc.count != 2u) {
-    lj_cleanup(&short_parse_doc_map, &short_record);
-    lonejson_cleanup(&short_parse_doc_map, &long_record);
-    lj_cleanup(&short_stream_doc_map, &stream_doc);
+    lj_cleanup(&short_parse_doc_map, &short_record, NULL);
+    lonejson_cleanup(&short_parse_doc_map, &long_record, NULL);
+    lj_cleanup(&short_stream_doc_map, &stream_doc, NULL);
     return 1;
   }
 
@@ -184,20 +184,20 @@ int main(void) {
       lj_serialize_buffer(short_runtime(), &short_parse_doc_map, &short_record,
                           short_json, sizeof(short_json), NULL, &error);
   if (status != LJ_STATUS_OK) {
-    lj_cleanup(&short_parse_doc_map, &short_record);
-    lonejson_cleanup(&short_parse_doc_map, &long_record);
+    lj_cleanup(&short_parse_doc_map, &short_record, NULL);
+    lonejson_cleanup(&short_parse_doc_map, &long_record, NULL);
     return 1;
   }
   status = lonejson_serialize_buffer(short_runtime(), &short_parse_doc_map,
                                      &long_record, long_json, sizeof(long_json),
                                      NULL, &error);
   if (status != LONEJSON_STATUS_OK) {
-    lj_cleanup(&short_parse_doc_map, &short_record);
-    lonejson_cleanup(&short_parse_doc_map, &long_record);
+    lj_cleanup(&short_parse_doc_map, &short_record, NULL);
+    lonejson_cleanup(&short_parse_doc_map, &long_record, NULL);
     return 1;
   }
-  lj_cleanup(&short_parse_doc_map, &short_record);
-  lonejson_cleanup(&short_parse_doc_map, &long_record);
-  lj_cleanup(&short_stream_doc_map, &stream_doc);
+  lj_cleanup(&short_parse_doc_map, &short_record, NULL);
+  lonejson_cleanup(&short_parse_doc_map, &long_record, NULL);
+  lj_cleanup(&short_stream_doc_map, &stream_doc, NULL);
   return strcmp(short_json, long_json) == 0 ? 0 : 1;
 }

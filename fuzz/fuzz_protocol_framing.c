@@ -244,10 +244,10 @@ static void fuzz_sse_json(const uint8_t *data, size_t size) {
   if (runtime == NULL) {
     return;
   }
-  lonejson_init(runtime, &fuzz_sse_json_doc_map, &doc);
+  lonejson_init(runtime, &fuzz_sse_json_doc_map, &doc, NULL);
   sse = lonejson_sse_open(&sse_options, &error);
   if (sse == NULL) {
-    lonejson_cleanup(&fuzz_sse_json_doc_map, &doc);
+    lonejson_cleanup(&fuzz_sse_json_doc_map, &doc, NULL);
     lonejson_free(runtime);
     return;
   }
@@ -265,7 +265,7 @@ static void fuzz_sse_json(const uint8_t *data, size_t size) {
                                  &json_options, fuzz_sse_json_event, &state,
                                  &error);
   lonejson_sse_close(sse);
-  lonejson_cleanup(&fuzz_sse_json_doc_map, &doc);
+  lonejson_cleanup(&fuzz_sse_json_doc_map, &doc, NULL);
   lonejson_free(runtime);
 }
 

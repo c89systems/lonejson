@@ -702,7 +702,7 @@ static void test_sse_json_large_event_sequence_and_cleanup(void) {
 
     lonejson_sse_close(sse);
     lonejson__byte_free(&payload, NULL);
-    lonejson_cleanup(&test_sse_large_event_doc_map, &doc);
+    lonejson_cleanup(&test_sse_large_event_doc_map, &doc, NULL);
     EXPECT(parse_alloc.stats.bytes_live == 0u);
   }
 }
@@ -757,7 +757,7 @@ static void test_sse_json_parse_failure_cleans_current_destination(void) {
 
   lonejson_sse_close(sse);
   lonejson__byte_free(&payload, NULL);
-  lonejson_cleanup(&test_sse_large_event_doc_map, &doc);
+  lonejson_cleanup(&test_sse_large_event_doc_map, &doc, NULL);
   EXPECT(parse_alloc.stats.bytes_live == 0u);
 }
 
@@ -809,7 +809,7 @@ static void test_sse_json_callback_failure_cleans_destination(void) {
 
   lonejson_sse_close(sse);
   lonejson__byte_free(&payload, NULL);
-  lonejson_cleanup(&test_sse_large_event_doc_map, &doc);
+  lonejson_cleanup(&test_sse_large_event_doc_map, &doc, NULL);
   EXPECT(parse_alloc.stats.bytes_live == 0u);
 }
 
@@ -1191,7 +1191,7 @@ test_sse_json_mixed_map_and_value_failures_preserve_prior_results(void) {
   lonejson_sse_close(sse);
   lonejson__byte_free(&payload, NULL);
   lonejson_json_value_cleanup(&value);
-  lonejson_cleanup(&test_sse_large_event_doc_map, &doc);
+  lonejson_cleanup(&test_sse_large_event_doc_map, &doc, NULL);
   EXPECT(parse_alloc.stats.bytes_live == 0u);
 }
 

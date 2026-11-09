@@ -1171,7 +1171,7 @@ static void bench_init_json_value_doc(bench_json_value_doc *doc) {
 }
 
 static void bench_cleanup_json_value_doc(bench_json_value_doc *doc) {
-  lonejson_cleanup(&bench_json_value_doc_map, doc);
+  lonejson_cleanup(&bench_json_value_doc_map, doc, NULL);
 }
 
 static int bench_check_json_value_doc(const bench_json_value_doc *doc) {
@@ -1423,7 +1423,7 @@ static int bench_parse_dynamic_buffer_case(void *user) {
   if (ok) {
     g_bench_sink += (lonejson_uint64)record.tags.count;
   }
-  lonejson_cleanup(ctx->map, &record);
+  lonejson_cleanup(ctx->map, &record, NULL);
   return ok;
 }
 

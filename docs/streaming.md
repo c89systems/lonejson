@@ -23,7 +23,7 @@ if (lj == NULL) {
   return 1;
 }
 
-lonejson_init(lj, &user_doc_map, &doc);
+lonejson_init(lj, &user_doc_map, &doc, NULL);
 stream = lonejson_stream_open_fd(lj, &user_doc_map, fd, &error);
 if (stream == NULL) {
   lonejson_free(lj);
@@ -34,7 +34,7 @@ for (;;) {
   lonejson_stream_result result = lonejson_stream_next(stream, &doc, &error);
   if (result == LONEJSON_STREAM_OBJECT) {
     /* process doc */
-    lonejson_cleanup(&user_doc_map, &doc);
+    lonejson_cleanup(&user_doc_map, &doc, NULL);
     continue;
   }
   if (result == LONEJSON_STREAM_EOF) {
@@ -45,7 +45,7 @@ for (;;) {
 }
 
 lonejson_stream_close(stream);
-lonejson_cleanup(&user_doc_map, &doc);
+lonejson_cleanup(&user_doc_map, &doc, NULL);
 lonejson_free(lj);
 ```
 
@@ -69,7 +69,7 @@ if (lj == NULL) {
   return 1;
 }
 
-lonejson_init(lj, &user_doc_map, &doc);
+lonejson_init(lj, &user_doc_map, &doc, NULL);
 items = lonejson_array_stream_open_path(lj, "items", "/tmp/users.json",
                                         &error);
 if (items == NULL) {
@@ -82,7 +82,7 @@ for (;;) {
       lonejson_array_stream_next(items, &user_doc_map, &doc, &error);
   if (result == LONEJSON_ARRAY_STREAM_ITEM) {
     /* process one mapped item */
-    lonejson_cleanup(&user_doc_map, &doc);
+    lonejson_cleanup(&user_doc_map, &doc, NULL);
     continue;
   }
   if (result == LONEJSON_ARRAY_STREAM_EOF) {
@@ -93,7 +93,7 @@ for (;;) {
 }
 
 lonejson_array_stream_close(items);
-lonejson_cleanup(&user_doc_map, &doc);
+lonejson_cleanup(&user_doc_map, &doc, NULL);
 lonejson_free(lj);
 ```
 
@@ -108,16 +108,16 @@ limits and clearing policy for other operations. For example, after initializing
 if (items->set_record_reuse(items, 1, &error) !=
     LONEJSON_STATUS_OK) {
   lonejson_array_stream_close(items);
-  lonejson_cleanup(&user_doc_map, &doc);
+  lonejson_cleanup(&user_doc_map, &doc, NULL);
   return;
 }
 while (lonejson_array_stream_next(items, &user_doc_map, &doc, &error) ==
        LONEJSON_ARRAY_STREAM_ITEM) {
   /* Consume doc before resetting it for the next item. */
-  lonejson_reset(lj, &user_doc_map, &doc);
+  lonejson_reset(lj, &user_doc_map, &doc, NULL);
 }
 lonejson_array_stream_close(items);
-lonejson_cleanup(&user_doc_map, &doc); /* Also handles a partial final record. */
+lonejson_cleanup(&user_doc_map, &doc, NULL); /* Also handles a partial final record. */
 ```
 
 The option defaults to zero, which inherits the runtime's existing behavior.
@@ -186,8 +186,8 @@ lonejson_config config;
 config = lonejson_default_config();
 config.clear_destination_by_default = 0;
 lj = lonejson_new(&config, &error);
-lonejson_init(lj, &envelope_map, &envelope);
-lonejson_init(lj, &user_doc_map, &item);
+lonejson_init(lj, &envelope_map, &envelope, NULL);
+lonejson_init(lj, &user_doc_map, &item, NULL);
 handler.item_map = &user_doc_map;
 handler.item_dst = &item;
 handler.item = on_item;
@@ -195,8 +195,8 @@ handler.user = NULL;
 lonejson_mapped_array_stream_set_handler(&envelope.items, &handler, &error);
 lonejson_parse_path(lj, &envelope_map, &envelope, "/tmp/envelope.json",
                     &error);
-lonejson_cleanup(&user_doc_map, &item);
-lonejson_cleanup(&envelope_map, &envelope);
+lonejson_cleanup(&user_doc_map, &item, NULL);
+lonejson_cleanup(&envelope_map, &envelope, NULL);
 lonejson_free(lj);
 ```
 

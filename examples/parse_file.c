@@ -46,7 +46,7 @@ int main(void) {
     return 1;
   }
 
-  lonejson_init(lj, &inventory_item_map, &item);
+  lonejson_init(lj, &inventory_item_map, &item, NULL);
   if (lonejson_parse_path(lj, &inventory_item_map, &item, path, &error) !=
       LONEJSON_STATUS_OK) {
     fprintf(stderr, "parse failed: %s\n", error.message);
@@ -56,7 +56,7 @@ int main(void) {
   }
 
   printf("sku=%s quantity=%ld\n", item.sku, (long)item.quantity);
-  lonejson_cleanup(&inventory_item_map, &item);
+  lonejson_cleanup(&inventory_item_map, &item, NULL);
   lonejson_free(lj);
   unlink(path);
   return 0;

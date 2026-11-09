@@ -298,7 +298,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
   (void)lonejson_visit_value_cstr(runtime, json, &visitor, &state, &error);
 
   memset(&doc, 0, sizeof(doc));
-  lonejson_init(runtime, &fuzz_boundary_doc_map, &doc);
+  lonejson_init(runtime, &fuzz_boundary_doc_map, &doc, NULL);
   (void)lonejson_json_value_enable_parse_capture(&doc.payload, &error);
   status =
       lonejson_parse_cstr(runtime, &fuzz_boundary_doc_map, &doc, json, &error);
@@ -309,7 +309,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
                                     sink_buffer, sizeof(sink_buffer), &needed,
                                     &error);
   }
-  lonejson_cleanup(&fuzz_boundary_doc_map, &doc);
+  lonejson_cleanup(&fuzz_boundary_doc_map, &doc, NULL);
   free(json);
   lonejson_free(runtime);
   return 0;

@@ -37,7 +37,7 @@ LONEJSON_MAP_DEFINE(fuzz_item_map, fuzz_item, fuzz_item_fields);
 static lonejson_status fuzz_push_item(void *user, void *dst) {
   fuzz_push_state *state = (fuzz_push_state *)user;
 
-  lonejson_cleanup(&fuzz_item_map, dst);
+  lonejson_cleanup(&fuzz_item_map, dst, NULL);
   state->items++;
   if (state->fail_after != 0u && state->items >= state->fail_after) {
     return LONEJSON_STATUS_INVALID_ARGUMENT;
@@ -122,7 +122,7 @@ static void fuzz_drive_mapped(const char *path, const uint8_t *json,
 
     memset(&item, 0, sizeof(item));
     result = lonejson_array_stream_next(stream, &fuzz_item_map, &item, &error);
-    lonejson_cleanup(&fuzz_item_map, &item);
+    lonejson_cleanup(&fuzz_item_map, &item, NULL);
     if (result == LONEJSON_ARRAY_STREAM_WOULD_BLOCK) {
       continue;
     }
@@ -220,7 +220,7 @@ static void fuzz_drive_push(const char *path, const uint8_t *json,
     status =
         lonejson_array_stream_push(stream, &fuzz_item_map, &item, json + offset,
                                    n, fuzz_push_item, &state, &error);
-    lonejson_cleanup(&fuzz_item_map, &item);
+    lonejson_cleanup(&fuzz_item_map, &item, NULL);
     offset += n;
     if (status != LONEJSON_STATUS_OK) {
       lonejson_array_stream_close(stream);
@@ -234,7 +234,7 @@ static void fuzz_drive_push(const char *path, const uint8_t *json,
   memset(&item, 0, sizeof(item));
   (void)lonejson_array_stream_finish(stream, &fuzz_item_map, &item,
                                      fuzz_push_item, &state, &error);
-  lonejson_cleanup(&fuzz_item_map, &item);
+  lonejson_cleanup(&fuzz_item_map, &item, NULL);
   lonejson_array_stream_close(stream);
   lonejson_free(runtime);
 }
@@ -314,7 +314,7 @@ static void fuzz_expect_root_duplicate(const char *json, size_t json_len,
   for (count = 0u; count < 4u; ++count) {
     memset(&item, 0, sizeof(item));
     result = lonejson_array_stream_next(stream, &fuzz_item_map, &item, &error);
-    lonejson_cleanup(&fuzz_item_map, &item);
+    lonejson_cleanup(&fuzz_item_map, &item, NULL);
     if (result != LONEJSON_ARRAY_STREAM_ITEM) {
       break;
     }

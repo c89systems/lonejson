@@ -155,13 +155,13 @@ static void fuzz_parse_stream_envelope(const uint8_t *data, size_t size) {
   handler.chunk = fuzz_stream_chunk;
   handler.end = fuzz_stream_end;
 
-  lonejson_init(runtime, &fuzz_stream_envelope_map, &envelope);
+  lonejson_init(runtime, &fuzz_stream_envelope_map, &envelope, NULL);
   (void)lonejson_string_array_stream_set_handler(&envelope.keys, &handler,
                                                  &state, &error);
   (void)lonejson_json_value_enable_parse_capture(&envelope.metadata, &error);
   (void)lonejson_parse_buffer(runtime, &fuzz_stream_envelope_map, &envelope,
                               data, size, &error);
-  lonejson_cleanup(&fuzz_stream_envelope_map, &envelope);
+  lonejson_cleanup(&fuzz_stream_envelope_map, &envelope, NULL);
   lonejson_free(runtime);
 }
 
@@ -352,11 +352,11 @@ static void fuzz_parse_capped_alloc_doc(const uint8_t *data, size_t size) {
   }
 
   memset(&doc, 0, sizeof(doc));
-  lonejson_init(runtime, &fuzz_capped_alloc_doc_map, &doc);
+  lonejson_init(runtime, &fuzz_capped_alloc_doc_map, &doc, NULL);
   status = lonejson_parse_cstr(runtime, &fuzz_capped_alloc_doc_map, &doc, json,
                                &error);
   (void)status;
-  lonejson_cleanup(&fuzz_capped_alloc_doc_map, &doc);
+  lonejson_cleanup(&fuzz_capped_alloc_doc_map, &doc, NULL);
   lonejson_free(runtime);
   free(json);
 }
@@ -384,7 +384,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
     (void)lonejson_serialize_buffer(runtime, &fuzz_person_map, &person, buffer,
                                     sizeof(buffer), &needed, &error);
   }
-  lonejson_cleanup(&fuzz_person_map, &person);
+  lonejson_cleanup(&fuzz_person_map, &person, NULL);
   lonejson_free(runtime);
   return 0;
 }

@@ -133,3 +133,20 @@ explicit: `LONEJSON_BASE64_STANDARD`, `LONEJSON_BASE64_STANDARD_RAW`,
 `lonejson.base64_decode(text, variant)`, where `variant` is `"standard"`,
 `"standard_raw"`, `"url"`, or `"url_raw"`; `"jwt"` is accepted as an alias for
 `"url_raw"`.
+
+## Checked record lifecycle
+
+`lonejson_init(runtime, map, record, &error)`, `lonejson_reset(...)` and
+`lonejson_cleanup(map, record, &error)` return `lonejson_status`. Their receiver
+methods and short aliases return the same status. Check initialization before
+using mapped handles, and check reset before reusing a record.
+
+Schema analysis and record lifecycle traversal use bounded inline workspaces
+and grow on the heap for deep schemas or recursive object arrays. If traversal
+workspace allocation fails, the record remains unchanged; restore allocator
+availability and retry. Inline object cycles and cyclic record storage return
+`LONEJSON_STATUS_INVALID_ARGUMENT`. Recursive array schemas remain supported.
+The JSON parser's input depth limit does not limit schema initialization.
+
+These signatures require shared-library ABI 28, one increment from released
+v0.47.0's ABI 27. Rebuild downstream consumers with matching headers and library.

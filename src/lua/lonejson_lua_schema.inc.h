@@ -626,7 +626,8 @@ static void ljlua_schema_release_scratch(ljlua_schema *schema,
   }
 }
 
-static void ljlua_prepare_record_storage(ljlua_schema *schema, void *record) {
+static void ljlua_prepare_record_storage(lua_State *L, ljlua_schema *schema,
+                                         void *record) {
   size_t i;
 
   memset(record, 0, schema->record_size);
@@ -689,7 +690,12 @@ static void ljlua_prepare_record_storage(ljlua_schema *schema, void *record) {
       break;
     }
   }
-  lonejson_init(schema->runtime, &schema->map, record);
+  {
+    lonejson_error error;
+    if (lonejson_init(schema->runtime, &schema->map, record, &error) !=
+        LONEJSON_STATUS_OK)
+      luaL_error(L, "%s", error.message);
+  }
 }
 
 static ljlua_schema_ud *ljlua_check_schema(lua_State *L, int index) {

@@ -34,7 +34,7 @@ int main(void) {
     return 1;
   }
 
-  lonejson_init(lj, &outbound_bytes_doc_map, &doc);
+  lonejson_init(lj, &outbound_bytes_doc_map, &doc, NULL);
   strcpy(doc.id, "bin-1");
 
   fd = mkstemp(path);
@@ -68,7 +68,7 @@ int main(void) {
       lonejson_serialize_alloc(lj, &outbound_bytes_doc_map, &doc, NULL, &error);
   if (json == NULL) {
     fprintf(stderr, "serialize failed: %s\n", error.message);
-    lonejson_cleanup(&outbound_bytes_doc_map, &doc);
+    lonejson_cleanup(&outbound_bytes_doc_map, &doc, NULL);
     close(fd);
     unlink(path);
     lonejson_free(lj);
@@ -79,7 +79,7 @@ int main(void) {
   printf("json=%s\n", json);
 
   LONEJSON_FREE(json);
-  lonejson_cleanup(&outbound_bytes_doc_map, &doc);
+  lonejson_cleanup(&outbound_bytes_doc_map, &doc, NULL);
   close(fd);
   unlink(path);
   lonejson_free(lj);

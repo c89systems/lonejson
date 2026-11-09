@@ -77,7 +77,7 @@ int main(void) {
   sink.buffer = payload_bytes;
   sink.capacity = sizeof(payload_bytes);
 
-  lj_init(runtime, &event_doc_map, &doc);
+  lj_init(runtime, &event_doc_map, &doc, NULL);
   status = lj_json_value_set_parse_sink(&doc.response.payload,
                                         buffer_sink_write, &sink, &error);
   if (status != LJ_STATUS_OK) {
@@ -89,7 +89,7 @@ int main(void) {
   status = lj_parse_cstr(runtime, &event_doc_map, &doc, first_json, &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "first parse failed: %s\n", error.message);
-    lj_cleanup(&event_doc_map, &doc);
+    lj_cleanup(&event_doc_map, &doc, NULL);
     lj_free(runtime);
     return 1;
   }
@@ -103,7 +103,7 @@ int main(void) {
   status = lj_parse_cstr(runtime, &event_doc_map, &doc, second_json, &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "second parse failed: %s\n", error.message);
-    lj_cleanup(&event_doc_map, &doc);
+    lj_cleanup(&event_doc_map, &doc, NULL);
     lj_free(runtime);
     return 1;
   }
@@ -111,7 +111,7 @@ int main(void) {
   printf("second type=%s status=%s payload=%s\n", doc.type, doc.response.status,
          payload_bytes);
 
-  lj_cleanup(&event_doc_map, &doc);
+  lj_cleanup(&event_doc_map, &doc, NULL);
   lj_free(runtime);
   return 0;
 }

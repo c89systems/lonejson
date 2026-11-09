@@ -206,6 +206,34 @@ Its document and output buffers live on the heap. The musl run checks the defaul
 128 KiB worker stack; unoptimized builds use ordinary inlining to avoid expanding
 recursive serializer frames. Optimized builds retain the existing forced inlining.
 
+The record lifecycle regressions run initialization, reset, cleanup and parsing
+against 4,096 nested maps on a default worker stack. They also cover recursive
+object arrays, inline-workspace boundaries, invalid cycles and allocation
+failure with retry. Lua interop exercises fresh states through depth 128,
+rejection beyond the limit, callback errors and allocator failures.
+
+GCC and Clang builds reject production C and Lua binding frames larger than
+8 KiB. They also reject VLAs and `alloca()`; use fixed bounded buffers or
+the project allocator with checked allocation and cleanup. This compiler guard
+complements the worker tests: small recursive frames can still exhaust a thread
+stack, so the whole active call chain matters.
+
+On glibc Linux, Debug executables set their default pthread stack to 128 KiB.
+This private executable setup also applies to Debug end-to-end applications
+and their executed Debug children. Curl end-to-end checks use clients from the
+selected build directory. Main-thread limits, compiler/CMake worker defaults and
+explicit thread stack-size requests retain their normal behavior.
+CTest appends `glibc.pthread.stack_cache_size=0` to `GLIBC_TUNABLES`, inherited
+by child applications, so a default worker cannot reuse a larger cached stack.
+For direct Debug application runs, supply that tunable at process startup too.
+
+`lonejson_debug_worker_stack_tests` checks actual default and nested worker
+sizes after a larger explicit worker exits, explicit stack and guard requests,
+an executed child application and an unconstrained executable control. It also
+checks main-thread limits against values captured before Debug startup and
+verifies that guard access faults in child processes. The native musl worker
+regressions remain required; constrained glibc testing complements them.
+
 `make test` is intentionally broader than raw CTest: it configures and builds
 the debug tree, stages standalone examples, runs the debug CTest preset, and
 then runs the full-feature Lua integration test through `make lua-test` on

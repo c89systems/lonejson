@@ -130,7 +130,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(lj, &query_envelope_map, &doc);
+  lj_init(lj, &query_envelope_map, &doc, NULL);
   memset(&selector_log, 0, sizeof(selector_log));
   memset(&fields_log, 0, sizeof(fields_log));
   visitor = lj_default_value_visitor();
@@ -161,7 +161,7 @@ int main(void) {
                                            &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "fields visitor setup failed: %s\n", error.message);
-    lj_cleanup(&query_envelope_map, &doc);
+    lj_cleanup(&query_envelope_map, &doc, NULL);
     lj_free(lj);
     return 1;
   }
@@ -169,7 +169,7 @@ int main(void) {
   status = lj_parse_cstr(lj, &query_envelope_map, &doc, inbound_json, &error);
   if (status != LJ_STATUS_OK) {
     fprintf(stderr, "parse failed: %s\n", error.message);
-    lj_cleanup(&query_envelope_map, &doc);
+    lj_cleanup(&query_envelope_map, &doc, NULL);
     lj_free(lj);
     return 1;
   }
@@ -177,7 +177,7 @@ int main(void) {
   printf("selector events=%s\n", selector_log.text);
   printf("fields events=%s\n", fields_log.text);
 
-  lj_cleanup(&query_envelope_map, &doc);
+  lj_cleanup(&query_envelope_map, &doc, NULL);
   lj_free(lj);
   return 0;
 }

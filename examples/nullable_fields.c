@@ -26,7 +26,7 @@ static int parse_and_print(lj *runtime, const char *json) {
   job_status status;
   lj_error error;
 
-  lj_init(runtime, &job_status_map, &status);
+  lj_init(runtime, &job_status_map, &status, NULL);
   if (lj_parse_cstr(runtime, &job_status_map, &status, json, &error) !=
       LJ_STATUS_OK) {
     fprintf(stderr, "parse failed: %s\n", error.message);
@@ -48,7 +48,7 @@ static int parse_and_print(lj *runtime, const char *json) {
   }
   putchar('\n');
 
-  lj_cleanup(&job_status_map, &status);
+  lj_cleanup(&job_status_map, &status, NULL);
   return 0;
 }
 
@@ -75,7 +75,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(runtime, &job_status_map, &out);
+  lj_init(runtime, &job_status_map, &out, NULL);
   snprintf(out.name, sizeof(out.name), "%s", "retrying");
   out.attempts = 3u;
   out.has_attempts = 1;
@@ -92,7 +92,7 @@ int main(void) {
 
   puts(json);
   LJ_FREE(json);
-  lj_cleanup(&job_status_map, &out);
+  lj_cleanup(&job_status_map, &out, NULL);
   lj_free(runtime);
   return 0;
 }

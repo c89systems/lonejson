@@ -525,9 +525,14 @@ lonejson__sse_json_begin_parser(lonejson__sse_state *sse,
     sse->json_retained_value_active = 1;
   } else if (sse->json_parser.options.clear_destination) {
     lonejson__sse_json_cleanup_retained_map_destination(sse);
-    lonejson__init_map_with_allocator(ctx->map, ctx->dst,
-                                      &sse->json_parser.allocator,
-                                      sse->json_parser.runtime);
+    if (!lonejson__init_map_parse(&sse->json_parser, ctx->map, ctx->dst)) {
+      lonejson_status status = sse->json_parser.error.code;
+      if (error != NULL)
+        *error = sse->json_parser.error;
+      lonejson_parser_destroy(&sse->json_parser);
+      lonejson__sse_json_release_runtime(sse);
+      return status;
+    }
     sse->json_retained_map = ctx->map;
     sse->json_retained_dst = ctx->dst;
     sse->json_retained_active = 1;

@@ -29,7 +29,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(runtime, &user_profile_map, &profile);
+  lj_init(runtime, &user_profile_map, &profile, NULL);
   if (lj_parse_cstr(runtime, &user_profile_map, &profile, json, &error) !=
       LJ_STATUS_OK) {
     fprintf(stderr, "parse failed: %s\n", error.message);
@@ -40,7 +40,7 @@ int main(void) {
   printf("name=%s age=%ld active=%s\n", profile.name, (long)profile.age,
          profile.active ? "true" : "false");
 
-  lj_cleanup(&user_profile_map, &profile);
+  lj_cleanup(&user_profile_map, &profile, NULL);
   lj_free(runtime);
   return 0;
 }

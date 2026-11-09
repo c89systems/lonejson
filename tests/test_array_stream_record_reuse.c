@@ -103,7 +103,7 @@ static void prepare(lonejson *runtime, record *doc, lonejson_int64 *backing,
                     words_seen *words) {
   lonejson_array_stream_string_handler handler;
   lonejson_error error;
-  lonejson_init(runtime, &record_map, doc);
+  lonejson_init(runtime, &record_map, doc, NULL);
   doc->values.items = backing;
   doc->values.capacity = 1u;
   doc->values.flags = LONEJSON_ARRAY_FIXED_CAPACITY;
@@ -189,7 +189,7 @@ static void test_pull_sources(lonejson *runtime, allocation_watch *watch) {
         check_item(&doc, index);
         if (source == 0 && index == 0u)
           CHECK(reader.offset < strlen(document));
-        lonejson_reset(runtime, &record_map, &doc);
+        lonejson_reset(runtime, &record_map, &doc, NULL);
         check_backing(&doc, backing);
       }
       CHECK(strcmp(words.text, "abc") == 0);
@@ -199,7 +199,7 @@ static void test_pull_sources(lonejson *runtime, allocation_watch *watch) {
             LONEJSON_STATUS_INVALID_ARGUMENT);
       stream->close(stream);
     }
-    lonejson_cleanup(&record_map, &doc);
+    lonejson_cleanup(&record_map, &doc, NULL);
     if (file != NULL) {
       CHECK(fseek(file, 0, SEEK_SET) == 0);
       fclose(file);
@@ -230,7 +230,7 @@ static lonejson_status item_callback(void *user, void *value) {
   check_item(doc, seen->count++);
   if (seen->cancel)
     return LONEJSON_STATUS_IO_ERROR;
-  lonejson_reset(seen->runtime, &record_map, doc);
+  lonejson_reset(seen->runtime, &record_map, doc, NULL);
   return LONEJSON_STATUS_OK;
 }
 static void test_push(lonejson *runtime) {
@@ -272,7 +272,7 @@ static void test_push(lonejson *runtime) {
       CHECK(seen.first_delivery < strlen(document));
     check_backing(&doc, backing);
     stream->close(stream);
-    lonejson_cleanup(&record_map, &doc);
+    lonejson_cleanup(&record_map, &doc, NULL);
   }
 }
 static lonejson_status count_callback(void *user, void *value) {
@@ -335,9 +335,9 @@ static void test_errors(lonejson *runtime) {
         if (doc.name != NULL)
           CHECK(strcmp(doc.name, "owned") == 0);
       }
-      lonejson_reset(runtime, &record_map, &doc);
+      lonejson_reset(runtime, &record_map, &doc, NULL);
       check_backing(&doc, backing);
-      lonejson_cleanup(&record_map, &doc);
+      lonejson_cleanup(&record_map, &doc, NULL);
     }
 }
 static void test_callback_cancellation(lonejson *runtime) {
@@ -369,7 +369,7 @@ static void test_callback_cancellation(lonejson *runtime) {
   CHECK(doc.name != NULL);
   if (doc.name != NULL)
     CHECK(strcmp(doc.name, "one") == 0);
-  lonejson_cleanup(&record_map, &doc);
+  lonejson_cleanup(&record_map, &doc, NULL);
 }
 
 static void test_policy_isolation(lonejson *runtime) {
@@ -418,13 +418,13 @@ static void test_policy_isolation(lonejson *runtime) {
       } else
         CHECK(doc.values.count == 2u && doc.values.items != backing);
     }
-    lonejson_cleanup(&record_map, &doc);
+    lonejson_cleanup(&record_map, &doc, NULL);
     if (mode != 3) {
       prepare(selected, &doc, backing, &words);
       CHECK(lonejson_array_stream_next(streams[1], &record_map, &doc, &error) ==
             LONEJSON_ARRAY_STREAM_ITEM);
       CHECK(doc.values.count == 2u && doc.values.items != backing);
-      lonejson_cleanup(&record_map, &doc);
+      lonejson_cleanup(&record_map, &doc, NULL);
     }
     lonejson_array_stream_close(streams[0]);
     lonejson_array_stream_close(streams[1]);
@@ -458,7 +458,7 @@ static void test_configuration_lifecycle(lonejson *runtime) {
   CHECK(lonejson_array_stream_next(stream, &record_map, &doc, &error) ==
         LONEJSON_ARRAY_STREAM_EOF);
   lonejson_array_stream_close(stream);
-  lonejson_cleanup(&record_map, &doc);
+  lonejson_cleanup(&record_map, &doc, NULL);
   stream = lonejson_array_stream_open_push(runtime, "", &error);
   CHECK(lonejson_array_stream_push(stream, &record_map, &doc, NULL, 0u,
                                    count_callback, &count,
@@ -581,7 +581,7 @@ static void test_caller_reset_and_legacy_push(lonejson *runtime) {
   CHECK(doc.name == owned && doc.values.count == 1u);
   check_backing(&doc, backing);
   lonejson_array_stream_close(stream);
-  lonejson_cleanup(&record_map, &doc);
+  lonejson_cleanup(&record_map, &doc, NULL);
   for (reuse = 0; reuse <= 1; ++reuse) {
     static const char json[] = "[{\"name\":\"one\",\"values\":[7]}]";
     lonejson_config config = lonejson_default_config();
@@ -606,7 +606,7 @@ static void test_caller_reset_and_legacy_push(lonejson *runtime) {
                                          &error) == LONEJSON_STATUS_OK);
       lonejson_array_stream_close(stream);
     }
-    lonejson_cleanup(&record_map, &doc);
+    lonejson_cleanup(&record_map, &doc, NULL);
     if (reuse)
       lonejson_free(selected);
   }

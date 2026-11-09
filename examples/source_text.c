@@ -33,7 +33,7 @@ int main(void) {
     return 1;
   }
 
-  lj_init(runtime, &outbound_text_doc_map, &doc);
+  lj_init(runtime, &outbound_text_doc_map, &doc, NULL);
   strcpy(doc.id, "txt-1");
 
   fd = mkstemp(path);
@@ -62,7 +62,7 @@ int main(void) {
       lj_serialize_alloc(runtime, &outbound_text_doc_map, &doc, NULL, &error);
   if (json == NULL) {
     fprintf(stderr, "serialize failed: %s\n", error.message);
-    lj_cleanup(&outbound_text_doc_map, &doc);
+    lj_cleanup(&outbound_text_doc_map, &doc, NULL);
     unlink(path);
     lj_free(runtime);
     return 1;
@@ -72,7 +72,7 @@ int main(void) {
   printf("json=%s\n", json);
 
   LONEJSON_FREE(json);
-  lj_cleanup(&outbound_text_doc_map, &doc);
+  lj_cleanup(&outbound_text_doc_map, &doc, NULL);
   unlink(path);
   lj_free(runtime);
   return 0;

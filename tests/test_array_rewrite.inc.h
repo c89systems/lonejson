@@ -1269,7 +1269,7 @@ static void test_array_rewrite_empty_all_drop_and_all_append(void) {
   EXPECT(seen.count == 2u);
 }
 
-static void test_array_rewrite_append_only_root_zero_alloc(void) {
+static void test_array_rewrite_append_only_root_bounded_workspace(void) {
   static const char json[] = "[]";
   test_reader_state reader = {json, 0u, 64u};
   test_array_rewrite_seen seen;
@@ -1296,7 +1296,8 @@ static void test_array_rewrite_append_only_root_zero_alloc(void) {
              "", test_state_reader, &reader, test_buffer_sink_write, &sink,
              &parse_options, &options, &error) == LONEJSON_STATUS_OK);
   EXPECT(strcmp((char *)out, "[{\"id\":99,\"label\":\"tail\"}]") == 0);
-  EXPECT(alloc_state.stats.peak_bytes_live == 0u);
+  EXPECT(alloc_state.stats.peak_bytes_live > 0u);
+  EXPECT(alloc_state.stats.peak_bytes_live < 16u * 1024u);
   EXPECT(alloc_state.stats.bytes_live == 0u);
 }
 

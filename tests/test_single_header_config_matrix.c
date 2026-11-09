@@ -140,16 +140,16 @@ static int config_test_parse_and_serialize(void) {
   char out[128];
 
   lonejson_error_init(&error);
-  lonejson_init(config_runtime(), &config_item_map, &item);
+  lonejson_init(config_runtime(), &config_item_map, &item, NULL);
   status = lonejson_parse_cstr(config_runtime(), &config_item_map, &item, json,
                                &error);
   if (status != LONEJSON_STATUS_OK || !config_expect_item(&item)) {
-    lonejson_cleanup(&config_item_map, &item);
+    lonejson_cleanup(&config_item_map, &item, NULL);
     return 1;
   }
   status = lonejson_serialize_buffer(config_runtime(), &config_item_map, &item,
                                      out, sizeof(out), NULL, &error);
-  lonejson_cleanup(&config_item_map, &item);
+  lonejson_cleanup(&config_item_map, &item, NULL);
   if (status != LONEJSON_STATUS_OK) {
     return 1;
   }
@@ -172,25 +172,25 @@ static int config_test_array_stream(void) {
   if (stream == NULL) {
     return 1;
   }
-  lonejson_init(config_runtime(), &config_item_map, &item);
+  lonejson_init(config_runtime(), &config_item_map, &item, NULL);
   if (stream->set_record_reuse(stream, 1, &error) != LONEJSON_STATUS_OK) {
     lonejson_array_stream_close(stream);
-    lonejson_cleanup(&config_item_map, &item);
+    lonejson_cleanup(&config_item_map, &item, NULL);
     return 1;
   }
   if (stream->error_fn(stream)->code != LONEJSON_STATUS_OK) {
     stream->close(stream);
-    lonejson_cleanup(&config_item_map, &item);
+    lonejson_cleanup(&config_item_map, &item, NULL);
     return 1;
   }
   result = lonejson_array_stream_next(stream, &config_item_map, &item, &error);
   if (result != LONEJSON_ARRAY_STREAM_ITEM || !config_expect_item(&item)) {
-    lonejson_cleanup(&config_item_map, &item);
+    lonejson_cleanup(&config_item_map, &item, NULL);
     lonejson_array_stream_close(stream);
     return 1;
   }
   result = lonejson_array_stream_next(stream, &config_item_map, &item, &error);
-  lonejson_cleanup(&config_item_map, &item);
+  lonejson_cleanup(&config_item_map, &item, NULL);
   lonejson_array_stream_close(stream);
   return result == LONEJSON_ARRAY_STREAM_EOF ? 0 : 1;
 }
@@ -247,13 +247,13 @@ static int config_test_short_aliases(void) {
   if (runtime == NULL) {
     return 1;
   }
-  lj_init(runtime, &config_item_map, &item);
+  lj_init(runtime, &config_item_map, &item, NULL);
   strcpy(item.id, "cfg");
   item.count = 7;
   item.ok = true;
   status = lj_serialize_buffer(runtime, &config_item_map, &item, out,
                                sizeof(out), NULL, &error);
-  lj_cleanup(&config_item_map, &item);
+  lj_cleanup(&config_item_map, &item, NULL);
   ok = status == LJ_STATUS_OK &&
        strcmp(out, "{\"id\":\"cfg\",\"count\":7,\"ok\":true}") == 0;
   lj_free(runtime);

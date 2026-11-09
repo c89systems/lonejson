@@ -1,3 +1,7 @@
+static lonejson_status
+lonejson__runtime_lifecycle(lonejson *runtime, const lonejson_map *map,
+                            void *value, lonejson_error *error, int operation);
+
 lonejson__parse_options lonejson__default_parse_options(void) {
   lonejson__parse_options options;
 
@@ -772,10 +776,14 @@ static lonejson_status lonejson__runtime_visit_path_value_path(
 static lonejson_status lonejson__runtime_visit_path_value_fd(
     lonejson *runtime, int fd, const lonejson_path_value_visitor *visitor,
     void *user, lonejson_error *error);
-static void lonejson__runtime_init_value(lonejson *runtime,
-                                         const lonejson_map *map, void *value);
-static void lonejson__runtime_reset_value(lonejson *runtime,
-                                          const lonejson_map *map, void *value);
+static lonejson_status lonejson__runtime_init_value(lonejson *runtime,
+                                                    const lonejson_map *map,
+                                                    void *value,
+                                                    lonejson_error *error);
+static lonejson_status lonejson__runtime_reset_value(lonejson *runtime,
+                                                     const lonejson_map *map,
+                                                     void *value,
+                                                     lonejson_error *error);
 static lonejson_stream *
 lonejson__runtime_stream_open_reader(lonejson *runtime, const lonejson_map *map,
                                      lonejson_reader_fn reader, void *user,
@@ -901,9 +909,10 @@ static lonejson_status
 lonejson__runtime_writer_init_sink(lonejson *runtime, lonejson_writer *writer,
                                    lonejson_sink_fn sink, void *sink_user,
                                    lonejson_error *error);
-static void lonejson__runtime_cleanup_value(lonejson *runtime,
-                                            const lonejson_map *map,
-                                            void *value);
+static lonejson_status lonejson__runtime_cleanup_value(lonejson *runtime,
+                                                       const lonejson_map *map,
+                                                       void *value,
+                                                       lonejson_error *error);
 #ifdef LONEJSON_WITH_JWT
 static lonejson_status
 lonejson__runtime_set_auth_provider(lonejson *runtime,
@@ -1449,11 +1458,14 @@ static lonejson_parser *lonejson__parser_create_ex(
   analysis.may_allocate = 0;
   analysis.adopt_mask = 0u;
   if (!validate_only) {
-    analysis = lonejson__map_analysis_cached(map);
+    analysis = lonejson__map_analysis_cached_with_allocator(
+        map, options != NULL ? options->allocator : NULL);
   }
   if (!validate_only && !analysis.valid) {
-    lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u, 0u,
-                        "invalid field layout");
+    lonejson__set_error(error, analysis.status, 0u, 0u, 0u,
+                        analysis.status == LONEJSON_STATUS_ALLOCATION_FAILED
+                            ? "failed to allocate schema analysis workspace"
+                            : "invalid field layout");
     return NULL;
   }
   if (options != NULL &&
@@ -1566,10 +1578,14 @@ static lonejson_status lonejson__parse_buffer_with_options(
     return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
                                0u, "buffer is required");
   }
-  analysis = lonejson__map_analysis_cached(map);
+  analysis = lonejson__map_analysis_cached_with_allocator(
+      map, options != NULL ? options->allocator : NULL);
   if (!analysis.valid) {
-    return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
-                               0u, "invalid field layout");
+    return lonejson__set_error(
+        error, analysis.status, 0u, 0u, 0u,
+        analysis.status == LONEJSON_STATUS_ALLOCATION_FAILED
+            ? "failed to allocate schema analysis workspace"
+            : "invalid field layout");
   }
   if (options != NULL &&
       !LONEJSON__ALLOCATOR_IS_VALID_CONFIG(options->allocator)) {
@@ -1692,10 +1708,14 @@ static lonejson_status lonejson__parse_reader_with_options(
     return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
                                0u, "map and destination are required");
   }
-  analysis = lonejson__map_analysis_cached(map);
+  analysis = lonejson__map_analysis_cached_with_allocator(
+      map, options != NULL ? options->allocator : NULL);
   if (!analysis.valid) {
-    return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
-                               0u, "invalid field layout");
+    return lonejson__set_error(
+        error, analysis.status, 0u, 0u, 0u,
+        analysis.status == LONEJSON_STATUS_ALLOCATION_FAILED
+            ? "failed to allocate schema analysis workspace"
+            : "invalid field layout");
   }
   if (options != NULL &&
       !LONEJSON__ALLOCATOR_IS_VALID_CONFIG(options->allocator)) {
@@ -1952,22 +1972,26 @@ static lonejson_status lonejson__runtime_visit_path_value_fd(
   return lonejson_visit_path_value_fd(runtime, fd, visitor, user, error);
 }
 
-static void lonejson__runtime_init_value(lonejson *runtime,
-                                         const lonejson_map *map, void *value) {
-  lonejson_init(runtime, map, value);
+static lonejson_status lonejson__runtime_init_value(lonejson *runtime,
+                                                    const lonejson_map *map,
+                                                    void *value,
+                                                    lonejson_error *error) {
+  return lonejson_init(runtime, map, value, error);
 }
 
-static void lonejson__runtime_reset_value(lonejson *runtime,
-                                          const lonejson_map *map,
-                                          void *value) {
-  lonejson_reset(runtime, map, value);
+static lonejson_status lonejson__runtime_reset_value(lonejson *runtime,
+                                                     const lonejson_map *map,
+                                                     void *value,
+                                                     lonejson_error *error) {
+  return lonejson_reset(runtime, map, value, error);
 }
 
-static void lonejson__runtime_cleanup_value(lonejson *runtime,
-                                            const lonejson_map *map,
-                                            void *value) {
-  (void)runtime;
-  lonejson_cleanup(map, value);
+static lonejson_status lonejson__runtime_cleanup_value(lonejson *runtime,
+                                                       const lonejson_map *map,
+                                                       void *value,
+                                                       lonejson_error *error) {
+  return lonejson__runtime_lifecycle(runtime, map, value, error,
+                                     LONEJSON__RECORD_CLEANUP);
 }
 
 static void lonejson__stream_assign_methods(lonejson_stream *stream) {
@@ -4098,37 +4122,50 @@ lonejson_status lonejson_serialize_jsonl_path(lonejson *runtime,
   return status;
 }
 
-void lonejson_cleanup(const lonejson_map *map, void *value) {
-  lonejson__cleanup_map_checked(map, value);
+static lonejson_status lonejson__record_report(lonejson_status status,
+                                               lonejson_error *error) {
+  lonejson__clear_error(error);
+  if (status == LONEJSON_STATUS_OK)
+    return status;
+  return lonejson__set_error(
+      error, status, 0u, 0u, 0u,
+      status == LONEJSON_STATUS_ALLOCATION_FAILED
+          ? "failed to allocate record traversal workspace"
+          : "invalid map, record, or cyclic record storage");
 }
 
-void lonejson_init(lonejson *runtime, const lonejson_map *map, void *value) {
-  const lonejson_runtime *runtime_state;
-  lonejson__runtime_borrow borrow;
-
-  runtime_state =
-      lonejson__runtime_borrow_const((const lonejson *)runtime, &borrow);
-  if (runtime_state == NULL) {
-    lonejson__init_map_with_allocator(map, value, NULL, NULL);
-    return;
-  }
-  lonejson__init_map_with_allocator(map, value, runtime_state->config.allocator,
-                                    runtime_state);
-  lonejson__runtime_borrow_release(&borrow);
+lonejson_status lonejson_cleanup(const lonejson_map *map, void *value,
+                                 lonejson_error *error) {
+  return lonejson__record_report(lonejson__cleanup_map_checked(map, value),
+                                 error);
 }
 
-void lonejson_reset(lonejson *runtime, const lonejson_map *map, void *value) {
+static lonejson_status
+lonejson__runtime_lifecycle(lonejson *runtime, const lonejson_map *map,
+                            void *value, lonejson_error *error, int operation) {
   const lonejson_runtime *runtime_state;
   lonejson__runtime_borrow borrow;
-
+  lonejson_status status;
   runtime_state =
       lonejson__runtime_borrow_const((const lonejson *)runtime, &borrow);
-  if (runtime_state == NULL) {
-    lonejson__reset_map(map, value, NULL);
-    return;
-  }
-  lonejson__reset_map(map, value, runtime_state);
-  lonejson__runtime_borrow_release(&borrow);
+  status = lonejson__record_run(
+      map, value, operation, NULL,
+      runtime_state != NULL ? runtime_state->config.allocator : NULL,
+      runtime_state);
+  if (runtime_state != NULL)
+    lonejson__runtime_borrow_release(&borrow);
+  return lonejson__record_report(status, error);
+}
+
+lonejson_status lonejson_init(lonejson *runtime, const lonejson_map *map,
+                              void *value, lonejson_error *error) {
+  return lonejson__runtime_lifecycle(runtime, map, value, error,
+                                     LONEJSON__RECORD_INIT);
+}
+lonejson_status lonejson_reset(lonejson *runtime, const lonejson_map *map,
+                               void *value, lonejson_error *error) {
+  return lonejson__runtime_lifecycle(runtime, map, value, error,
+                                     LONEJSON__RECORD_RESET);
 }
 
 int lonejson_field_has_presence(const lonejson_field *field) {

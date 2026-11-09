@@ -97,7 +97,7 @@ option(LONEJSON_BUILD_WITH_CURL "Build lonejson with curl adapter APIs enabled."
 option(LONEJSON_BUILD_WITH_OPENSSL "Build lonejson with OpenSSL-backed auth/crypto support enabled." OFF)
 option(LONEJSON_BUILD_WITH_JWT "Build lonejson with JWT/JWK auth APIs enabled." OFF)
 option(LONEJSON_BUILD_WITH_OIDC "Build lonejson with OIDC/OAuth2 helper APIs enabled." OFF)
-set(LONEJSON_ABI_VERSION "27" CACHE STRING "Shared-library ABI / SONAME version"
+set(LONEJSON_ABI_VERSION "28" CACHE STRING "Shared-library ABI / SONAME version"
     FORCE)
 
 set(LONEJSON_PUBLIC_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -141,6 +141,8 @@ function(lonejson_configure_c_target target)
     target_compile_options(${target} PRIVATE
       -std=c89
       -Wall
+      -Wvla
+      -Walloca
       -Wextra
       -Wpedantic
       -pedantic-errors
@@ -149,10 +151,13 @@ function(lonejson_configure_c_target target)
   endif()
   lonejson_configure_link_warnings(${target})
   lonejson_configure_development_runtime(${target})
+  lonejson_configure_debug_worker_stack(${target})
 endfunction()
 
 set(LONEJSON_STRICT_DOWNSTREAM_WARNING_FLAGS
   -std=c89
+  -Wvla
+  -Walloca
   -Wall
   -Wextra
   -Werror
@@ -181,6 +186,7 @@ function(lonejson_configure_strict_downstream_target target)
   endif()
   lonejson_configure_link_warnings(${target})
   lonejson_configure_development_runtime(${target})
+  lonejson_configure_debug_worker_stack(${target})
 endfunction()
 
 function(lonejson_configure_lua_c_target target)
@@ -196,11 +202,14 @@ function(lonejson_configure_lua_c_target target)
     target_compile_options(${target} PRIVATE
       -std=gnu89
       -Wall
+      -Wvla
+      -Walloca
       -Wextra
       -Werror)
   endif()
   lonejson_configure_link_warnings(${target})
   lonejson_configure_development_runtime(${target})
+  lonejson_configure_debug_worker_stack(${target})
 endfunction()
 
 string(TOLOWER "${LONEJSON_TARGET_OS}" LONEJSON_TARGET_OS_LOWER)
@@ -410,6 +419,12 @@ if(LONEJSON_ENABLE_TSAN)
   add_link_options(-fsanitize=thread)
 endif()
 
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  # Production translation units share the supported default worker-stack budget.
+  set_source_files_properties(src/lonejson.c src/lua/lonejson_lua.c PROPERTIES
+    COMPILE_OPTIONS "-Wframe-larger-than=8192")
+endif()
+
 if(LONEJSON_ENABLE_STACK_USAGE AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
   add_compile_options(-fstack-usage)
 endif()
@@ -584,6 +599,43 @@ if(LONEJSON_BUILD_TESTS)
     lonejson_configure_c_target(lonejson_worker_stack_tests)
     add_test(NAME lonejson_worker_stack_tests COMMAND lonejson_worker_stack_tests)
     list(APPEND LONEJSON_STACK_USAGE_TARGETS lonejson_worker_stack_tests)
+    if(NOT CMAKE_CROSSCOMPILING AND LONEJSON_BOOTLIN_LIBC STREQUAL "gnu" AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+      add_executable(lonejson_debug_worker_stack_tests tests/test_debug_worker_stack.c)
+      target_link_libraries(lonejson_debug_worker_stack_tests PRIVATE Threads::Threads)
+      lonejson_configure_c_target(lonejson_debug_worker_stack_tests)
+      # An ordinary executable is the witness for unchanged build-tool defaults.
+      add_executable(lonejson_worker_stack_control tests/test_debug_worker_stack.c)
+      target_link_libraries(lonejson_worker_stack_control PRIVATE Threads::Threads)
+      target_compile_options(lonejson_worker_stack_control PRIVATE -std=c89 -Wall -Wextra -Werror -Wpedantic -pedantic-errors)
+      lonejson_configure_development_runtime(lonejson_worker_stack_control)
+      add_dependencies(lonejson_debug_worker_stack_tests lonejson_worker_stack_control)
+      add_test(NAME lonejson_debug_worker_stack_tests
+        COMMAND lonejson_worker_stack_control --run $<TARGET_FILE:lonejson_debug_worker_stack_tests>)
+      add_test(NAME lonejson_debug_stack_application_tests COMMAND "${CMAKE_COMMAND}"
+        "-DROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+        "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/debug-stack-application"
+        "-DGENERATOR=${CMAKE_GENERATOR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_debug_stack_application.cmake")
+      set_tests_properties(lonejson_debug_stack_application_tests PROPERTIES LABELS "local;host-policy")
+    endif()
+    add_executable(lonejson_record_lifecycle_stack_tests tests/test_record_lifecycle_stack.c)
+    target_link_libraries(lonejson_record_lifecycle_stack_tests PRIVATE lonejson_shared Threads::Threads)
+    lonejson_configure_c_target(lonejson_record_lifecycle_stack_tests)
+    list(APPEND LONEJSON_STACK_USAGE_TARGETS lonejson_record_lifecycle_stack_tests)
+    foreach(operation init reset cleanup parse)
+      add_test(NAME lonejson_record_${operation}_stack_tests
+        COMMAND lonejson_record_lifecycle_stack_tests ${operation} 4096)
+    endforeach()
+    foreach(depth 1 15 16 17 64)
+      add_test(NAME lonejson_record_stack_boundary_${depth}_tests
+        COMMAND lonejson_record_lifecycle_stack_tests init ${depth})
+    endforeach()
+    add_test(NAME lonejson_record_stack_oom_tests
+      COMMAND lonejson_record_lifecycle_stack_tests oom 64)
+    add_test(NAME lonejson_record_stack_cycles_tests
+      COMMAND lonejson_record_lifecycle_stack_tests cycles 64)
+    add_test(NAME lonejson_record_stack_arrays_tests
+      COMMAND lonejson_record_lifecycle_stack_tests arrays 4096)
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME lonejson_bootlin_runtime_tests
@@ -834,6 +886,7 @@ if(LONEJSON_BUILD_TESTS)
       LONEJSON_TEST_LUA_SIMULATE_NO_MAXINTEGER=1)
     target_link_libraries(lonejson_lua_interop_tests PRIVATE
       lonejson_shared
+      Threads::Threads
       "${LONEJSON_TARGET_LUA_LIBRARY}")
     set_target_properties(lonejson_lua_interop_tests PROPERTIES
       BUILD_RPATH "${CMAKE_CURRENT_BINARY_DIR};${LONEJSON_CPKT_ROOT}/lib")
@@ -866,7 +919,7 @@ if(LONEJSON_BUILD_TESTS)
   get_property(lonejson_runtime_tests DIRECTORY PROPERTY TESTS)
   if(LONEJSON_BASH_EXECUTABLE)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LonejsonLinuxPolicyTests.cmake")
-    foreach(case native_lua_ctest native_host_workflows native_test_prerequisites host_policy_scope
+    foreach(case curl_e2e_build_selection native_lua_ctest native_host_workflows native_test_prerequisites host_policy_scope
         selected_release_build package_verify_directory required_tool_discovery
         release_archive_reproducibility)
       add_test(NAME lonejson_${case}_tests
@@ -1215,8 +1268,25 @@ if(LONEJSON_BUILD_TESTS)
       -DLONEJSON_SINGLE_HEADER_DIST_GZ=${LONEJSON_SINGLE_HEADER_DIST_GZ}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_single_header_release_version.cmake)
 
+  if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    get_target_property(lonejson_stack_options lonejson_shared COMPILE_OPTIONS)
+    list(FILTER lonejson_stack_options INCLUDE REGEX "^-W(vla|alloca)$")
+    get_source_file_property(lonejson_frame_option src/lonejson.c COMPILE_OPTIONS)
+    list(APPEND lonejson_stack_options ${lonejson_frame_option})
+    add_test(NAME lonejson_stack_compile_guard_tests COMMAND "${CMAKE_COMMAND}"
+      "-DCOMPILER=${CMAKE_C_COMPILER}" "-DSYSROOT=${CMAKE_SYSROOT}"
+      "-DSTACK_OPTIONS=${lonejson_stack_options}"
+      "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/stack-compile-guards"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stack_compile_guards.cmake")
+  endif()
+
   get_property(lonejson_registered_tests DIRECTORY PROPERTY TESTS)
   foreach(lonejson_registered_test IN LISTS lonejson_registered_tests)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+        LONEJSON_BOOTLIN_LIBC STREQUAL "gnu" AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+      set_property(TEST "${lonejson_registered_test}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
+        "GLIBC_TUNABLES=string_append::glibc.pthread.stack_cache_size=0")
+    endif()
     get_property(lonejson_test_has_timeout TEST
       "${lonejson_registered_test}" PROPERTY TIMEOUT SET)
     if(NOT lonejson_test_has_timeout)

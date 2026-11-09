@@ -169,7 +169,7 @@ int main(void) {
   test_array_rewrite_source_and_parent_failures();
   test_array_rewrite_append_only_and_object_path();
   test_array_rewrite_empty_all_drop_and_all_append();
-  test_array_rewrite_append_only_root_zero_alloc();
+  test_array_rewrite_append_only_root_bounded_workspace();
   test_array_rewrite_spooled_replacement_item();
   test_array_rewrite_large_array_memory_bound();
   test_array_rewrite_owned_item_cleanup_between_items();

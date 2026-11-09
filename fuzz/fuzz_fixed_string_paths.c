@@ -202,7 +202,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
     return 0;
   }
 
-  lonejson_init(seed_runtime, &fuzz_fixed_stage_doc_map, &doc);
+  lonejson_init(seed_runtime, &fuzz_fixed_stage_doc_map, &doc, NULL);
   seed_json = fuzz_build_seed_json(seed_payload_len, seed_note_len);
   if (seed_json != NULL) {
     (void)lonejson_parse_cstr(seed_runtime, &fuzz_fixed_stage_doc_map, &doc,
@@ -222,7 +222,7 @@ int lonejson_fuzz_one_input(const uint8_t *data, size_t size) {
 
   free(followup_json);
   free(seed_json);
-  lonejson_cleanup(&fuzz_fixed_stage_doc_map, &doc);
+  lonejson_cleanup(&fuzz_fixed_stage_doc_map, &doc, NULL);
   lonejson_free(runtime);
   lonejson_free(seed_runtime);
   return 0;

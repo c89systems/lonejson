@@ -563,7 +563,7 @@ void lonejson_jwk_init(lonejson_jwk *jwk) {
 
 void lonejson_jwk_cleanup(lonejson_jwk *jwk) {
   if (jwk != NULL) {
-    lonejson_cleanup(&lonejson__jwk_map, jwk);
+    lonejson_cleanup(&lonejson__jwk_map, jwk, NULL);
     memset(jwk, 0, sizeof(*jwk));
   }
 }
@@ -576,7 +576,7 @@ void lonejson_jwks_init(lonejson_jwks *jwks) {
 
 void lonejson_jwks_cleanup(lonejson_jwks *jwks) {
   if (jwks != NULL) {
-    lonejson_cleanup(&lonejson__jwks_map, jwks);
+    lonejson_cleanup(&lonejson__jwks_map, jwks, NULL);
     memset(jwks, 0, sizeof(*jwks));
   }
 }
@@ -740,7 +740,7 @@ void lonejson_oidc_discovery_init(lonejson_oidc_discovery *discovery) {
 
 void lonejson_oidc_discovery_cleanup(lonejson_oidc_discovery *discovery) {
   if (discovery != NULL) {
-    lonejson_cleanup(&lonejson__oidc_discovery_map, discovery);
+    lonejson_cleanup(&lonejson__oidc_discovery_map, discovery, NULL);
     memset(discovery, 0, sizeof(*discovery));
   }
 }
@@ -1338,7 +1338,7 @@ void lonejson_oauth2_token_response_init(
 void lonejson_oauth2_token_response_cleanup(
     lonejson_oauth2_token_response *response) {
   if (response != NULL) {
-    lonejson_cleanup(&lonejson__oauth2_token_response_map, response);
+    lonejson_cleanup(&lonejson__oauth2_token_response_map, response, NULL);
     memset(response, 0, sizeof(*response));
   }
 }
@@ -1670,7 +1670,8 @@ void lonejson_oauth2_introspection_response_cleanup(
   if (response != NULL) {
     lonejson__owned_free(response->aud);
     response->aud = NULL;
-    lonejson_cleanup(&lonejson__oauth2_introspection_response_map, response);
+    lonejson_cleanup(&lonejson__oauth2_introspection_response_map, response,
+                     NULL);
     memset(response, 0, sizeof(*response));
   }
 }
@@ -1868,7 +1869,7 @@ void lonejson_oidc_userinfo_response_cleanup(
   if (out != NULL) {
     lonejson__owned_free(out->json);
     out->json = NULL;
-    lonejson_cleanup(&lonejson__oidc_userinfo_known_map, out);
+    lonejson_cleanup(&lonejson__oidc_userinfo_known_map, out, NULL);
     memset(out, 0, sizeof(*out));
   }
 }
@@ -5588,7 +5589,7 @@ static unsigned lonejson__m2m_modes_or_default(unsigned modes) {
 
 static void lonejson__m2m_store_cleanup(lonejson__m2m_store_doc *store) {
   if (store != NULL) {
-    lonejson_cleanup(&lonejson__m2m_store_doc_map, store);
+    lonejson_cleanup(&lonejson__m2m_store_doc_map, store, NULL);
   }
 }
 

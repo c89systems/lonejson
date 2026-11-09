@@ -93,3 +93,20 @@ function(lonejson_verify_development_runtime_coverage)
     endif()
   endforeach()
 endfunction()
+
+# Change only project Debug application defaults. Compiler/CMake workers and the
+# process main stack retain their normal settings. Executed child applications
+# get the same setup from their own executable, without a preload in build tools.
+function(lonejson_configure_debug_worker_stack target)
+  get_target_property(_lonejson_type ${target} TYPE)
+  if(_lonejson_type STREQUAL "EXECUTABLE" AND
+      CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+      LONEJSON_BOOTLIN_LIBC STREQUAL "gnu" AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    if(NOT TARGET Threads::Threads)
+      find_package(Threads REQUIRED)
+    endif()
+    target_sources(${target} PRIVATE
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../tests/debug_worker_stack.c")
+    target_link_libraries(${target} PRIVATE Threads::Threads)
+  endif()
+endfunction()

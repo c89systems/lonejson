@@ -5,6 +5,12 @@ method. The receiver is the first method argument. Constructors and initializers
 can be free functions or methods on the owning runtime; they do not require a
 method pointer in uninitialized destination storage.
 
+Runtime record `init`, `reset`, and `cleanup` methods, their free functions, and
+short aliases return `lonejson_status` and accept an optional error output.
+Traversal-workspace allocation failure preserves the record for retry. See
+[checked record lifecycle](api.md#checked-record-lifecycle) for ownership and
+ABI 28 requirements.
+
 The public API exposes these 19 receiver surfaces:
 
 | Surface | Operations checked |

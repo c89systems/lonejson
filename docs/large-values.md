@@ -198,7 +198,7 @@ whole-field JSON `null` still maps to Lua `nil`.
 For public structs, prefer lonejson's initializers and default helpers over
 manual `memset` or `{0}`:
 
-- `lonejson_init(lj, map, &value)` for mapped structs
+- `lonejson_init(lj, map, &value, NULL)` for mapped structs
 - `lonejson_json_value_init`, `lonejson_source_init`, `lonejson_spooled_init`
   for explicit handles
 - `lonejson_config.allocator` before initializing handles when a custom

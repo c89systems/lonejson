@@ -433,7 +433,7 @@ static void ljlua_cleanup_record_storage(ljlua_schema *schema, void *record) {
   if (schema == NULL || record == NULL) {
     return;
   }
-  lonejson_cleanup(&schema->map, record);
+  lonejson_cleanup(&schema->map, record, NULL);
 }
 
 static ljlua_field_meta *ljlua_find_meta(ljlua_schema *schema,
@@ -861,7 +861,7 @@ static int ljlua_assign_field_from_lua(lua_State *L, ljlua_schema *schema,
         lua_pop(L, 1);
         return luaL_error(L, "%s", error.message);
       }
-      ljlua_prepare_record_storage(meta->subschema, slot);
+      ljlua_prepare_record_storage(L, meta->subschema, slot);
       ljlua_assign_table_to_record(L, meta->subschema, slot, lua_gettop(L));
       lua_pop(L, 1);
     }

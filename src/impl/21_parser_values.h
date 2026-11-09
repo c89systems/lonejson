@@ -1728,8 +1728,8 @@ static void *lonejson__object_array_append_slot(lonejson_parser *parser,
   slot = (unsigned char *)arr->items + (arr->count * arr->elem_size);
   memset(slot, 0, arr->elem_size);
   if (field->submap != NULL) {
-    lonejson__init_map_with_allocator(field->submap, slot, &parser->allocator,
-                                      parser->runtime);
+    if (!lonejson__init_map_parse(parser, field->submap, slot))
+      return NULL;
   }
   arr->count++;
   return slot;

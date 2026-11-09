@@ -205,7 +205,7 @@ static int consumer_protocol_receivers(void) {
     sse->close(sse);
   }
   memset(&seen, 0, sizeof(seen));
-  lonejson_init(consumer_runtime(), &consumer_person_map, &person);
+  lonejson_init(consumer_runtime(), &consumer_person_map, &person, NULL);
   sse = lonejson_sse_open(NULL, &error);
   CONSUMER_PROTOCOL_CHECK(sse != NULL);
   if (sse != NULL) {
@@ -223,7 +223,7 @@ static int consumer_protocol_receivers(void) {
     CONSUMER_PROTOCOL_CHECK(seen.count == 1);
     sse->close(sse);
   }
-  lonejson_cleanup(&consumer_person_map, &person);
+  lonejson_cleanup(&consumer_person_map, &person, NULL);
   memset(&seen, 0, sizeof(seen));
   value = (lonejson_json_value *)malloc(sizeof(*value));
   CONSUMER_PROTOCOL_CHECK(value != NULL);
@@ -322,7 +322,7 @@ int main(void) {
   char value_buffer[16];
   unsigned char read_buffer[16];
 
-  lonejson_init(consumer_runtime(), &consumer_log_map, &log_record);
+  lonejson_init(consumer_runtime(), &consumer_log_map, &log_record, NULL);
   lonejson_error_init(&error);
   if (consumer_protocol_receivers() != 0)
     return 1;
@@ -356,7 +356,7 @@ int main(void) {
       strcmp(log_record.tags.items[0], "prod") != 0 ||
       strcmp(log_record.tags.items[1], "edge") != 0) {
     consumer_runtime()->cleanup(consumer_runtime(), &consumer_log_map,
-                                &log_record);
+                                &log_record, NULL);
     return 1;
   }
   if (string_stream.set_handler == NULL || mapped_stream.set_handler == NULL ||
@@ -364,7 +364,7 @@ int main(void) {
       consumer_runtime()->serialize_sink == NULL ||
       consumer_runtime()->serialize_buffer == NULL) {
     consumer_runtime()->cleanup(consumer_runtime(), &consumer_log_map,
-                                &log_record);
+                                &log_record, NULL);
     return 1;
   }
 
@@ -377,13 +377,13 @@ int main(void) {
       &sink, &error);
   if (status != LONEJSON_STATUS_OK) {
     consumer_runtime()->cleanup(consumer_runtime(), &consumer_log_map,
-                                &log_record);
+                                &log_record, NULL);
     return 1;
   }
   if (strstr(buffer, "\"name\": \"Alice\"") == NULL ||
       strstr(buffer, "\"tags\": [") == NULL) {
     consumer_runtime()->cleanup(consumer_runtime(), &consumer_log_map,
-                                &log_record);
+                                &log_record, NULL);
     return 1;
   }
 
@@ -391,7 +391,7 @@ int main(void) {
       consumer_runtime(), &consumer_log_map, &log_record, buffer,
       sizeof(buffer), NULL, &error);
   consumer_runtime()->cleanup(consumer_runtime(), &consumer_log_map,
-                              &log_record);
+                              &log_record, NULL);
   if (status != LONEJSON_STATUS_OK) {
     return 1;
   }
@@ -426,10 +426,10 @@ int main(void) {
                                &response, response_json, &error);
   if (status != LONEJSON_STATUS_OK || response.response_json == NULL ||
       strcmp(response.response_json, "created") != 0) {
-    lonejson_cleanup(&consumer_response_json_map, &response);
+    lonejson_cleanup(&consumer_response_json_map, &response, NULL);
     return 1;
   }
-  lonejson_cleanup(&consumer_response_json_map, &response);
+  lonejson_cleanup(&consumer_response_json_map, &response, NULL);
 
   response.response_json = value_buffer;
   value_buffer[0] = '\0';

@@ -20,14 +20,14 @@ static void test_array_stream_mapped_items_from_root_key(void) {
   EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
   EXPECT(item.id == 1);
   EXPECT(strcmp(item.label, "one") == 0);
-  lonejson_cleanup(&test_item_map, &item);
+  lonejson_cleanup(&test_item_map, &item, NULL);
 
   poison_bytes(&item, sizeof(item), 0x5Au);
   result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
   EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
   EXPECT(item.id == 2);
   EXPECT(strcmp(item.label, "two") == 0);
-  lonejson_cleanup(&test_item_map, &item);
+  lonejson_cleanup(&test_item_map, &item, NULL);
 
   result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
   EXPECT(result == LONEJSON_ARRAY_STREAM_EOF);
@@ -115,7 +115,7 @@ static void test_array_stream_open_path_and_fd_sources(void) {
     result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
     EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
     EXPECT(item.id == 7);
-    lonejson_cleanup(&test_item_map, &item);
+    lonejson_cleanup(&test_item_map, &item, NULL);
     result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
     EXPECT(result == LONEJSON_ARRAY_STREAM_EOF);
     EXPECT(error.code == LONEJSON_STATUS_OK);
@@ -132,7 +132,7 @@ static void test_array_stream_open_path_and_fd_sources(void) {
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
       EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
       EXPECT(item.id == 7);
-      lonejson_cleanup(&test_item_map, &item);
+      lonejson_cleanup(&test_item_map, &item, NULL);
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
       EXPECT(result == LONEJSON_ARRAY_STREAM_EOF);
@@ -166,7 +166,7 @@ static void test_array_stream_open_path_and_fd_sources(void) {
       EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
       if (result == LONEJSON_ARRAY_STREAM_ITEM) {
         EXPECT(item.id == 7);
-        lonejson_cleanup(&test_item_map, &item);
+        lonejson_cleanup(&test_item_map, &item, NULL);
       }
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
@@ -225,7 +225,7 @@ static void test_array_stream_failure_modes(void) {
     }
     result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
     if (result == LONEJSON_ARRAY_STREAM_ITEM) {
-      lonejson_cleanup(&test_item_map, &item);
+      lonejson_cleanup(&test_item_map, &item, NULL);
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
     }
@@ -292,7 +292,7 @@ static void test_array_stream_streaming_invariants(void) {
   EXPECT(after_first_item < strlen(json));
   EXPECT(strstr(json + after_first_item, "{bad}") != NULL);
   EXPECT(lonejson_array_stream_error(stream)->code == LONEJSON_STATUS_OK);
-  lonejson_cleanup(&test_item_map, &item);
+  lonejson_cleanup(&test_item_map, &item, NULL);
 
   result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
   EXPECT(result == LONEJSON_ARRAY_STREAM_ERROR);
@@ -396,7 +396,7 @@ static void test_array_stream_mapped_items_do_not_materialize_item(void) {
   EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
   EXPECT(item.id == 9);
   EXPECT(strcmp(item.label, "large-label") == 0);
-  lonejson_cleanup(&test_item_map, &item);
+  lonejson_cleanup(&test_item_map, &item, NULL);
 
   result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
   EXPECT(result == LONEJSON_ARRAY_STREAM_EOF);
@@ -415,12 +415,13 @@ test_array_stream_reused_mapped_destination_resets_allocations(void) {
   test_two_alloc_string_doc doc;
 
   reset_lonejson_alloc_stats();
-  lonejson_init(test_default_runtime(), &test_two_alloc_string_doc_map, &doc);
+  lonejson_init(test_default_runtime(), &test_two_alloc_string_doc_map, &doc,
+                NULL);
   stream = test_array_stream_open_reader("", test_state_reader, &state, NULL,
                                          &error);
   EXPECT(stream != NULL);
   if (stream == NULL) {
-    lonejson_cleanup(&test_two_alloc_string_doc_map, &doc);
+    lonejson_cleanup(&test_two_alloc_string_doc_map, &doc, NULL);
     return;
   }
 
@@ -442,7 +443,7 @@ test_array_stream_reused_mapped_destination_resets_allocations(void) {
   EXPECT(error.code == LONEJSON_STATUS_OK);
 
   lonejson_array_stream_close(stream);
-  lonejson_cleanup(&test_two_alloc_string_doc_map, &doc);
+  lonejson_cleanup(&test_two_alloc_string_doc_map, &doc, NULL);
   EXPECT(g_alloc_record_count == 0u);
 }
 
@@ -492,7 +493,7 @@ static void test_array_stream_skips_do_not_materialize_values(void) {
   EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
   EXPECT(item.id == 5);
   EXPECT(strcmp(item.label, "ok") == 0);
-  lonejson_cleanup(&test_item_map, &item);
+  lonejson_cleanup(&test_item_map, &item, NULL);
 
   result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
   EXPECT(result == LONEJSON_ARRAY_STREAM_EOF);
@@ -535,7 +536,7 @@ static void test_array_stream_escaped_key_path_matching(void) {
     result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
     EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
     EXPECT(item.id == cases[i].id);
-    lonejson_cleanup(&test_item_map, &item);
+    lonejson_cleanup(&test_item_map, &item, NULL);
     result = lonejson_array_stream_next(stream, &test_item_map, &item, &error);
     EXPECT(result == LONEJSON_ARRAY_STREAM_EOF);
     lonejson_array_stream_close(stream);
@@ -729,7 +730,7 @@ static void test_array_stream_duplicate_rejection_invariants(void) {
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
       EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
       EXPECT(item.id == 2);
-      lonejson_cleanup(&test_item_map, &item);
+      lonejson_cleanup(&test_item_map, &item, NULL);
 
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
@@ -751,7 +752,7 @@ static void test_array_stream_duplicate_rejection_invariants(void) {
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
       EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
       EXPECT(item.id == 2);
-      lonejson_cleanup(&test_item_map, &item);
+      lonejson_cleanup(&test_item_map, &item, NULL);
 
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
@@ -939,7 +940,7 @@ static void test_array_stream_reader_tolerates_empty_reads(void) {
       EXPECT(item.id == 42);
       EXPECT(strcmp(item.label, "ok") == 0);
       EXPECT(state.empty_reads_remaining == 0u);
-      lonejson_cleanup(&test_item_map, &item);
+      lonejson_cleanup(&test_item_map, &item, NULL);
 
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
@@ -1011,7 +1012,7 @@ static void test_array_stream_reader_tolerates_empty_reads(void) {
       EXPECT(error.code == LONEJSON_STATUS_OK);
       EXPECT(item.id == 7);
       EXPECT(strcmp(item.label, "ok") == 0);
-      lonejson_cleanup(&test_item_map, &item);
+      lonejson_cleanup(&test_item_map, &item, NULL);
 
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
@@ -1019,7 +1020,7 @@ static void test_array_stream_reader_tolerates_empty_reads(void) {
       EXPECT(error.code == LONEJSON_STATUS_OK);
       EXPECT(item.id == 8);
       EXPECT(strcmp(item.label, "two") == 0);
-      lonejson_cleanup(&test_item_map, &item);
+      lonejson_cleanup(&test_item_map, &item, NULL);
 
       result =
           lonejson_array_stream_next(stream, &test_item_map, &item, &error);
@@ -1174,7 +1175,7 @@ static void test_array_stream_would_block_boundaries(void) {
       EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
       if (result == LONEJSON_ARRAY_STREAM_ITEM) {
         EXPECT(item.id == 1);
-        lonejson_cleanup(&test_item_map, &item);
+        lonejson_cleanup(&test_item_map, &item, NULL);
       }
       lonejson_array_stream_close(stream);
     }
@@ -1215,7 +1216,7 @@ static void test_array_stream_would_block_boundaries(void) {
       EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
       if (result == LONEJSON_ARRAY_STREAM_ITEM) {
         EXPECT(item.id == 1);
-        lonejson_cleanup(&test_item_map, &item);
+        lonejson_cleanup(&test_item_map, &item, NULL);
       }
       lonejson_array_stream_close(stream);
     }
@@ -1237,7 +1238,7 @@ static void test_array_stream_would_block_boundaries(void) {
       EXPECT(result == LONEJSON_ARRAY_STREAM_ITEM);
       if (result == LONEJSON_ARRAY_STREAM_ITEM) {
         EXPECT(item.id == 1);
-        lonejson_cleanup(&test_item_map, &item);
+        lonejson_cleanup(&test_item_map, &item, NULL);
       }
       lonejson_array_stream_close(stream);
     }
@@ -1265,7 +1266,7 @@ static void test_array_stream_would_block_boundaries(void) {
       EXPECT(result == LONEJSON_ARRAY_STREAM_ERROR);
       EXPECT(error.code == LONEJSON_STATUS_INVALID_ARGUMENT);
       EXPECT(second.id == 77);
-      lonejson_cleanup(&test_item_map, &first);
+      lonejson_cleanup(&test_item_map, &first, NULL);
       lonejson_array_stream_close(stream);
     }
   }
@@ -1323,7 +1324,7 @@ static void test_array_stream_would_block_boundaries(void) {
       if (result == LONEJSON_ARRAY_STREAM_ITEM) {
         EXPECT(item.id == 7);
         EXPECT(strcmp(item.label, "ok") == 0);
-        lonejson_cleanup(&test_item_map, &item);
+        lonejson_cleanup(&test_item_map, &item, NULL);
       }
 
       result =
@@ -1337,7 +1338,7 @@ static void test_array_stream_would_block_boundaries(void) {
       if (result == LONEJSON_ARRAY_STREAM_ITEM) {
         EXPECT(item.id == 8);
         EXPECT(strcmp(item.label, "two") == 0);
-        lonejson_cleanup(&test_item_map, &item);
+        lonejson_cleanup(&test_item_map, &item, NULL);
       }
 
       result =
@@ -1934,7 +1935,7 @@ static void test_array_stream_push_cleans_reused_destination(void) {
   test_allocator_init(&alloc_state);
   options.allocator = &alloc_state.allocator;
   memset(&seen, 0, sizeof(seen));
-  lonejson_init(test_default_runtime(), &test_alloc_parse_doc_map, &doc);
+  lonejson_init(test_default_runtime(), &test_alloc_parse_doc_map, &doc, NULL);
   stream = test_array_stream_open_push("", &options, &error);
   EXPECT(stream != NULL);
   if (stream == NULL) {
@@ -1969,7 +1970,7 @@ static void test_array_stream_push_cleans_reused_destination(void) {
   EXPECT(status == LONEJSON_STATUS_IO_ERROR);
   lonejson_array_stream_close(stream);
   EXPECT(alloc_state.stats.bytes_live == 0u);
-  lonejson_cleanup(&test_alloc_parse_doc_map, &doc);
+  lonejson_cleanup(&test_alloc_parse_doc_map, &doc, NULL);
 }
 
 static void test_array_stream_push_string_items(void) {
@@ -2247,7 +2248,7 @@ static void test_array_stream_mapped_string_field_envelope(void) {
   memset(&seen, 0, sizeof(seen));
   handler = test_array_stream_string_handler();
   lonejson_init(test_default_runtime(),
-                &test_mapped_string_array_stream_doc_map, &doc);
+                &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(lonejson_string_array_stream_set_handler(
              &doc.keys, &handler, &seen, &error) == LONEJSON_STATUS_OK);
   EXPECT(test_parse_reader(&test_mapped_string_array_stream_doc_map, &doc,
@@ -2260,7 +2261,7 @@ static void test_array_stream_mapped_string_field_envelope(void) {
   EXPECT(strcmp(seen.items[2], "key-c") == 0);
   EXPECT(strcmp(doc.cursor, "next-page") == 0);
   EXPECT(doc.index_seq == 123u);
-  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc);
+  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc, NULL);
 }
 
 static void test_array_stream_mapped_string_field_zeroed_set_handler(void) {
@@ -2285,7 +2286,7 @@ static void test_array_stream_mapped_string_field_zeroed_set_handler(void) {
   EXPECT(strcmp(seen.items[1], "key-b") == 0);
   EXPECT(strcmp(doc.cursor, "next-page") == 0);
   EXPECT(doc.index_seq == 123u);
-  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc);
+  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc, NULL);
 }
 
 static void
@@ -2302,17 +2303,18 @@ test_array_stream_mapped_string_field_lifecycle_preserves_set_handler_method(
   handler = test_array_stream_string_handler();
   runtime = test_default_runtime();
 
-  runtime->init(runtime, &test_mapped_string_array_stream_doc_map, &doc);
+  runtime->init(runtime, &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(doc.keys.set_handler == lonejson_string_array_stream_set_handler);
   EXPECT(doc.keys.set_handler(&doc.keys, &handler, &seen, &error) ==
          LONEJSON_STATUS_OK);
   EXPECT(doc.keys.handler.chunk == handler.chunk);
 
-  runtime->reset(runtime, &test_mapped_string_array_stream_doc_map, &doc);
+  runtime->reset(runtime, &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(doc.keys.set_handler == lonejson_string_array_stream_set_handler);
   EXPECT(doc.keys.handler.chunk == handler.chunk);
 
-  runtime->cleanup(runtime, &test_mapped_string_array_stream_doc_map, &doc);
+  runtime->cleanup(runtime, &test_mapped_string_array_stream_doc_map, &doc,
+                   NULL);
   EXPECT(doc.keys.set_handler == lonejson_string_array_stream_set_handler);
   EXPECT(doc.keys.handler.chunk == handler.chunk);
 }
@@ -2330,10 +2332,10 @@ test_array_stream_mapped_string_field_reset_preserves_handler(void) {
   handler = test_array_stream_string_handler();
   runtime = test_default_runtime();
 
-  runtime->init(runtime, &test_mapped_string_array_stream_doc_map, &doc);
+  runtime->init(runtime, &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(doc.keys.set_handler(&doc.keys, &handler, &seen, &error) ==
          LONEJSON_STATUS_OK);
-  runtime->reset(runtime, &test_mapped_string_array_stream_doc_map, &doc);
+  runtime->reset(runtime, &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(doc.keys.set_handler == lonejson_string_array_stream_set_handler);
   EXPECT(doc.keys.handler.chunk == handler.chunk);
   EXPECT(doc.keys.user == &seen);
@@ -2346,7 +2348,7 @@ test_array_stream_mapped_string_field_init_overwrites_nonzero_storage(void) {
 
   runtime = test_default_runtime();
   poison_bytes(&doc, sizeof(doc), 0xA5u);
-  runtime->init(runtime, &test_mapped_string_array_stream_doc_map, &doc);
+  runtime->init(runtime, &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(doc.keys.set_handler == lonejson_string_array_stream_set_handler);
   EXPECT(doc.keys.handler.chunk == NULL);
   EXPECT(doc.keys.user == NULL);
@@ -2387,7 +2389,7 @@ static void test_array_stream_mapped_string_field_metadata_and_long_item(void) {
   options = lonejson__default_parse_options();
   options.clear_destination = 0;
   lonejson_init(test_default_runtime(),
-                &test_mapped_string_array_stream_doc_map, &doc);
+                &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(lonejson_string_array_stream_set_handler(
              &doc.keys, &handler, &seen, &error) == LONEJSON_STATUS_OK);
   EXPECT(lonejson_json_value_enable_parse_capture(&doc.metadata, &error) ==
@@ -2412,7 +2414,7 @@ static void test_array_stream_mapped_string_field_metadata_and_long_item(void) {
                                            &error) == LONEJSON_STATUS_OK);
   EXPECT(strcmp((const char *)raw, "{\"source\":\"index\",\"ok\":true}") == 0);
 
-  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc);
+  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc, NULL);
   free(json);
 }
 
@@ -2445,13 +2447,13 @@ static void test_array_stream_mapped_string_field_failure_modes(void) {
 
     memset(&seen, 0, sizeof(seen));
     lonejson_init(test_default_runtime(),
-                  &test_mapped_string_array_stream_doc_map, &doc);
+                  &test_mapped_string_array_stream_doc_map, &doc, NULL);
     EXPECT(lonejson_string_array_stream_set_handler(
                &doc.keys, &handler, &seen, &error) == LONEJSON_STATUS_OK);
     status = test_parse_cstr(&test_mapped_string_array_stream_doc_map, &doc,
                              jsons[i], NULL, &error);
     EXPECT(status == expected[i]);
-    lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc);
+    lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc, NULL);
   }
 
   {
@@ -2464,14 +2466,14 @@ static void test_array_stream_mapped_string_field_failure_modes(void) {
     memset(&seen, 0, sizeof(seen));
     seen.fail_after_chunks = 1u;
     lonejson_init(test_default_runtime(),
-                  &test_mapped_string_array_stream_doc_map, &doc);
+                  &test_mapped_string_array_stream_doc_map, &doc, NULL);
     EXPECT(lonejson_string_array_stream_set_handler(
                &doc.keys, &handler, &seen, &error) == LONEJSON_STATUS_OK);
     EXPECT(test_parse_cstr(&test_mapped_string_array_stream_doc_map, &doc,
                            "{\"keys\":[\"fail\"],\"cursor\":\"x\","
                            "\"index_seq\":1}",
                            NULL, &error) == LONEJSON_STATUS_IO_ERROR);
-    lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc);
+    lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc, NULL);
   }
 }
 
@@ -2481,13 +2483,13 @@ static void test_array_stream_mapped_string_field_serialize_rejected(void) {
   char buffer[64];
 
   lonejson_init(test_default_runtime(),
-                &test_mapped_string_array_stream_doc_map, &doc);
+                &test_mapped_string_array_stream_doc_map, &doc, NULL);
   strcpy(doc.cursor, "x");
   doc.index_seq = 1u;
   EXPECT(test_serialize_buffer(&test_mapped_string_array_stream_doc_map, &doc,
                                buffer, sizeof(buffer), NULL, NULL,
                                &error) == LONEJSON_STATUS_TYPE_MISMATCH);
-  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc);
+  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc, NULL);
 }
 
 typedef struct test_mapped_stream_board {
@@ -2730,9 +2732,11 @@ static void test_array_stream_mapped_field_nested_items(void) {
   memset(&store, 0, sizeof(store));
   memset(&board, 0, sizeof(board));
 
-  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store);
-  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board);
-  lonejson_init(test_default_runtime(), &test_item_map, &item);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_item_map, &item, NULL);
 
   seen.active_board = &board;
   item_handler.item_map = &test_item_map;
@@ -2764,9 +2768,9 @@ static void test_array_stream_mapped_field_nested_items(void) {
   EXPECT(strcmp(seen.board_names[1], "beta") == 0);
   EXPECT(seen.board_seqs[1] == 8);
 
-  lonejson_cleanup(&test_item_map, &item);
-  lonejson_cleanup(&test_mapped_stream_board_map, &board);
-  lonejson_cleanup(&test_mapped_stream_store_map, &store);
+  lonejson_cleanup(&test_item_map, &item, NULL);
+  lonejson_cleanup(&test_mapped_stream_board_map, &board, NULL);
+  lonejson_cleanup(&test_mapped_stream_store_map, &store, NULL);
 }
 
 static void test_array_stream_mapped_field_zeroed_set_handler(void) {
@@ -2814,9 +2818,9 @@ static void test_array_stream_mapped_field_zeroed_set_handler(void) {
   EXPECT(strcmp(seen.board_names[0], "alpha") == 0);
   EXPECT(seen.board_seqs[0] == 7);
 
-  lonejson_cleanup(&test_item_map, &item);
-  lonejson_cleanup(&test_mapped_stream_board_map, &board);
-  lonejson_cleanup(&test_mapped_stream_store_map, &store);
+  lonejson_cleanup(&test_item_map, &item, NULL);
+  lonejson_cleanup(&test_mapped_stream_board_map, &board, NULL);
+  lonejson_cleanup(&test_mapped_stream_store_map, &store, NULL);
 }
 
 static void
@@ -2838,8 +2842,8 @@ test_array_stream_mapped_field_lifecycle_preserves_set_handler_method(void) {
   memset(&item_handler, 0, sizeof(item_handler));
 
   runtime = test_default_runtime();
-  runtime->init(runtime, &test_mapped_stream_board_map, &board);
-  runtime->init(runtime, &test_mapped_stream_store_map, &store);
+  runtime->init(runtime, &test_mapped_stream_board_map, &board, NULL);
+  runtime->init(runtime, &test_mapped_stream_store_map, &store, NULL);
   EXPECT(board.items.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(store.boards.set_handler == lonejson_mapped_array_stream_set_handler);
 
@@ -2860,21 +2864,21 @@ test_array_stream_mapped_field_lifecycle_preserves_set_handler_method(void) {
   EXPECT(store.boards.handler.item == board_handler.item);
   EXPECT(board.items.handler.item == item_handler.item);
 
-  runtime->reset(runtime, &test_mapped_stream_board_map, &board);
-  runtime->reset(runtime, &test_mapped_stream_store_map, &store);
+  runtime->reset(runtime, &test_mapped_stream_board_map, &board, NULL);
+  runtime->reset(runtime, &test_mapped_stream_store_map, &store, NULL);
   EXPECT(board.items.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(store.boards.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(store.boards.handler.item == board_handler.item);
   EXPECT(board.items.handler.item == item_handler.item);
 
-  runtime->cleanup(runtime, &test_mapped_stream_board_map, &board);
-  runtime->cleanup(runtime, &test_mapped_stream_store_map, &store);
+  runtime->cleanup(runtime, &test_mapped_stream_board_map, &board, NULL);
+  runtime->cleanup(runtime, &test_mapped_stream_store_map, &store, NULL);
   EXPECT(board.items.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(store.boards.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(store.boards.handler.item == board_handler.item);
   EXPECT(board.items.handler.item == item_handler.item);
 
-  runtime->cleanup(runtime, &test_item_map, &item);
+  runtime->cleanup(runtime, &test_item_map, &item, NULL);
 }
 
 static void test_array_stream_mapped_field_reset_preserves_handler(void) {
@@ -2895,8 +2899,8 @@ static void test_array_stream_mapped_field_reset_preserves_handler(void) {
   memset(&item_handler, 0, sizeof(item_handler));
 
   runtime = test_default_runtime();
-  runtime->init(runtime, &test_mapped_stream_board_map, &board);
-  runtime->init(runtime, &test_mapped_stream_store_map, &store);
+  runtime->init(runtime, &test_mapped_stream_board_map, &board, NULL);
+  runtime->init(runtime, &test_mapped_stream_store_map, &store, NULL);
 
   seen.active_board = &board;
   item_handler.item_map = &test_item_map;
@@ -2913,8 +2917,8 @@ static void test_array_stream_mapped_field_reset_preserves_handler(void) {
   EXPECT(store.boards.set_handler(&store.boards, &board_handler, &error) ==
          LONEJSON_STATUS_OK);
 
-  runtime->reset(runtime, &test_mapped_stream_board_map, &board);
-  runtime->reset(runtime, &test_mapped_stream_store_map, &store);
+  runtime->reset(runtime, &test_mapped_stream_board_map, &board, NULL);
+  runtime->reset(runtime, &test_mapped_stream_store_map, &store, NULL);
   EXPECT(board.items.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(store.boards.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(board.items.handler.item == item_handler.item);
@@ -2922,7 +2926,7 @@ static void test_array_stream_mapped_field_reset_preserves_handler(void) {
   EXPECT(store.boards.handler.item == board_handler.item);
   EXPECT(store.boards.handler.user == &seen);
 
-  runtime->cleanup(runtime, &test_item_map, &item);
+  runtime->cleanup(runtime, &test_item_map, &item, NULL);
 }
 
 static void
@@ -2934,8 +2938,8 @@ test_array_stream_mapped_field_init_overwrites_nonzero_storage(void) {
   runtime = test_default_runtime();
   poison_bytes(&store, sizeof(store), 0xA5u);
   poison_bytes(&board, sizeof(board), 0xA5u);
-  runtime->init(runtime, &test_mapped_stream_store_map, &store);
-  runtime->init(runtime, &test_mapped_stream_board_map, &board);
+  runtime->init(runtime, &test_mapped_stream_store_map, &store, NULL);
+  runtime->init(runtime, &test_mapped_stream_board_map, &board, NULL);
   EXPECT(store.boards.set_handler == lonejson_mapped_array_stream_set_handler);
   EXPECT(store.boards.handler.item_map == NULL);
   EXPECT(store.boards.active == 0);
@@ -2971,9 +2975,9 @@ static void test_array_stream_mapped_field_nested_json_value_sink_reuse(void) {
   seen.sink = &payload_sink;
 
   lonejson_init(test_default_runtime(), &test_mapped_json_value_stream_doc_map,
-                &doc);
+                &doc, NULL);
   lonejson_init(test_default_runtime(), &test_mapped_json_value_stream_item_map,
-                &item);
+                &item, NULL);
   status = lonejson_json_value_set_parse_sink(
       &item.payload, test_buffer_sink_write, &payload_sink, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
@@ -2996,8 +3000,8 @@ static void test_array_stream_mapped_field_nested_json_value_sink_reuse(void) {
   EXPECT(strcmp(seen.ids[1], "two") == 0);
   EXPECT(strcmp(seen.payloads[1], "[true,null,2]") == 0);
 
-  lonejson_cleanup(&test_mapped_json_value_stream_item_map, &item);
-  lonejson_cleanup(&test_mapped_json_value_stream_doc_map, &doc);
+  lonejson_cleanup(&test_mapped_json_value_stream_item_map, &item, NULL);
+  lonejson_cleanup(&test_mapped_json_value_stream_doc_map, &doc, NULL);
 }
 
 static void
@@ -3019,9 +3023,9 @@ test_array_stream_mapped_field_nested_json_value_capture_budget_reuse(void) {
   test_allocator_init(&alloc);
 
   lonejson_init(test_default_runtime(), &test_mapped_json_value_stream_doc_map,
-                &doc);
+                &doc, NULL);
   lonejson_init(test_default_runtime(), &test_mapped_json_value_stream_item_map,
-                &item);
+                &item, NULL);
   status = lonejson_json_value_enable_parse_capture(&item.payload, &error);
   EXPECT(status == LONEJSON_STATUS_OK);
 
@@ -3039,8 +3043,8 @@ test_array_stream_mapped_field_nested_json_value_capture_budget_reuse(void) {
   EXPECT(status == LONEJSON_STATUS_OK);
   EXPECT(strcmp(doc.tail, "done") == 0);
 
-  lonejson_cleanup(&test_mapped_json_value_stream_item_map, &item);
-  lonejson_cleanup(&test_mapped_json_value_stream_doc_map, &doc);
+  lonejson_cleanup(&test_mapped_json_value_stream_item_map, &item, NULL);
+  lonejson_cleanup(&test_mapped_json_value_stream_doc_map, &doc, NULL);
   EXPECT(alloc.stats.bytes_live == 0u);
 }
 
@@ -3086,9 +3090,11 @@ static void test_array_stream_mapped_field_failure_modes(void) {
              NULL, &item_handler, &error) == LONEJSON_STATUS_INVALID_ARGUMENT);
   EXPECT(lonejson_mapped_array_stream_set_handler(&board.items, NULL, &error) ==
          LONEJSON_STATUS_INVALID_ARGUMENT);
-  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store);
-  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board);
-  lonejson_init(test_default_runtime(), &test_item_map, &item);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_item_map, &item, NULL);
 
   seen.active_board = &board;
   item_handler.item_map = &test_item_map;
@@ -3145,14 +3151,16 @@ static void test_array_stream_mapped_field_failure_modes(void) {
   EXPECT(seen.item_count == 1u);
   EXPECT(seen.board_count == 1u);
 
-  lonejson_cleanup(&test_item_map, &item);
-  lonejson_cleanup(&test_mapped_stream_board_map, &board);
-  lonejson_cleanup(&test_mapped_stream_store_map, &store);
+  lonejson_cleanup(&test_item_map, &item, NULL);
+  lonejson_cleanup(&test_mapped_stream_board_map, &board, NULL);
+  lonejson_cleanup(&test_mapped_stream_store_map, &store, NULL);
 
   memset(&store, 0, sizeof(store));
   memset(&board, 0, sizeof(board));
-  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store);
-  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board,
+                NULL);
   board_handler.item_map = &test_mapped_stream_board_map;
   board_handler.item_dst = &board;
   board_handler.item = test_mapped_stream_board_item;
@@ -3166,8 +3174,8 @@ static void test_array_stream_mapped_field_failure_modes(void) {
                                sizeof(buffer), NULL, NULL,
                                &error) == LONEJSON_STATUS_TYPE_MISMATCH);
 
-  lonejson_cleanup(&test_mapped_stream_board_map, &board);
-  lonejson_cleanup(&test_mapped_stream_store_map, &store);
+  lonejson_cleanup(&test_mapped_stream_board_map, &board, NULL);
+  lonejson_cleanup(&test_mapped_stream_store_map, &store, NULL);
 }
 
 static void test_array_stream_mapped_field_failure_cleans_alloc_items(void) {
@@ -3199,9 +3207,11 @@ static void test_array_stream_mapped_field_failure_cleans_alloc_items(void) {
   options.clear_destination = 0;
   options.allocator = &alloc_state.allocator;
 
-  lonejson_init(test_default_runtime(), &test_alloc_mapped_doc_map, &doc);
-  lonejson_init(test_default_runtime(), &test_alloc_mapped_parent_map, &parent);
-  lonejson_init(test_default_runtime(), &test_alloc_mapped_child_map, &child);
+  lonejson_init(test_default_runtime(), &test_alloc_mapped_doc_map, &doc, NULL);
+  lonejson_init(test_default_runtime(), &test_alloc_mapped_parent_map, &parent,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_alloc_mapped_child_map, &child,
+                NULL);
 
   child_handler.item_map = &test_alloc_mapped_child_map;
   child_handler.item_dst = &child;
@@ -3242,9 +3252,9 @@ static void test_array_stream_mapped_field_failure_cleans_alloc_items(void) {
   EXPECT(strcmp(seen.parent_names[0], "outer-ok") == 0);
   EXPECT(seen.parent_seqs[0] == 3);
 
-  lonejson_cleanup(&test_alloc_mapped_child_map, &child);
-  lonejson_cleanup(&test_alloc_mapped_parent_map, &parent);
-  lonejson_cleanup(&test_alloc_mapped_doc_map, &doc);
+  lonejson_cleanup(&test_alloc_mapped_child_map, &child, NULL);
+  lonejson_cleanup(&test_alloc_mapped_parent_map, &parent, NULL);
+  lonejson_cleanup(&test_alloc_mapped_doc_map, &doc, NULL);
   EXPECT(alloc_state.stats.bytes_live == 0u);
 }
 
@@ -3269,9 +3279,11 @@ static void test_array_stream_mapped_field_curl_facade(void) {
   memset(&item_handler, 0, sizeof(item_handler));
   memset(&store, 0, sizeof(store));
   memset(&board, 0, sizeof(board));
-  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store);
-  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board);
-  lonejson_init(test_default_runtime(), &test_item_map, &item);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_store_map, &store,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_mapped_stream_board_map, &board,
+                NULL);
+  lonejson_init(test_default_runtime(), &test_item_map, &item, NULL);
 
   seen.active_board = &board;
   item_handler.item_map = &test_item_map;
@@ -3304,9 +3316,9 @@ static void test_array_stream_mapped_field_curl_facade(void) {
   EXPECT(seen.board_seqs[1] == 8);
 
   lonejson_curl_parse_cleanup(&parse);
-  lonejson_cleanup(&test_item_map, &item);
-  lonejson_cleanup(&test_mapped_stream_board_map, &board);
-  lonejson_cleanup(&test_mapped_stream_store_map, &store);
+  lonejson_cleanup(&test_item_map, &item, NULL);
+  lonejson_cleanup(&test_mapped_stream_board_map, &board, NULL);
+  lonejson_cleanup(&test_mapped_stream_store_map, &store, NULL);
 }
 #else
 static void test_array_stream_mapped_field_curl_facade(void) {}
@@ -3326,7 +3338,7 @@ static void test_array_stream_mapped_string_field_curl_facade(void) {
   memset(&seen, 0, sizeof(seen));
   handler = test_array_stream_string_handler();
   lonejson_init(test_default_runtime(),
-                &test_mapped_string_array_stream_doc_map, &doc);
+                &test_mapped_string_array_stream_doc_map, &doc, NULL);
   EXPECT(lonejson_string_array_stream_set_handler(
              &doc.keys, &handler, &seen, &error) == LONEJSON_STATUS_OK);
   EXPECT(lonejson_curl_parse_init(&parse, test_default_runtime(),
@@ -3343,7 +3355,7 @@ static void test_array_stream_mapped_string_field_curl_facade(void) {
   EXPECT(strcmp(doc.cursor, "c") == 0);
   EXPECT(doc.index_seq == 44u);
   lonejson_curl_parse_cleanup(&parse);
-  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc);
+  lonejson_cleanup(&test_mapped_string_array_stream_doc_map, &doc, NULL);
 }
 #else
 static void test_array_stream_mapped_string_field_curl_facade(void) {}

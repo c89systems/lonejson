@@ -94,7 +94,7 @@ int main(void) {
 
   if (!lj_spooled_spilled(&message.body)) {
     fprintf(stderr, "expected the example to spill to disk\n");
-    lj_cleanup(&large_message_map, &message);
+    lj_cleanup(&large_message_map, &message, NULL);
     lj_free(runtime);
     free(body);
     LONEJSON_FREE(json);
@@ -108,7 +108,7 @@ int main(void) {
 
   if (lj_spooled_rewind(&message.body, &error) != LJ_STATUS_OK) {
     fprintf(stderr, "rewind failed: %s\n", error.message);
-    lj_cleanup(&large_message_map, &message);
+    lj_cleanup(&large_message_map, &message, NULL);
     lj_free(runtime);
     free(body);
     LONEJSON_FREE(json);
@@ -124,7 +124,7 @@ int main(void) {
          before_cleanup_exists ? "yes" : "no");
   printf("preview=%s\n", (const char *)preview);
 
-  lj_cleanup(&large_message_map, &message);
+  lj_cleanup(&large_message_map, &message, NULL);
   lj_free(runtime);
   after_cleanup_missing =
       (temp_path[0] != '\0' && stat(temp_path, &st) != 0 && errno == ENOENT)
