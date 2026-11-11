@@ -1063,6 +1063,7 @@ lonejson *lonejson_new(const lonejson_config *config, lonejson_error *error) {
   runtime->visit_value_filep = lonejson__runtime_visit_value_filep;
   runtime->visit_value_path = lonejson__runtime_visit_value_path;
   runtime->visit_value_fd = lonejson__runtime_visit_value_fd;
+  runtime->value_visitor_stream_open = lonejson_value_visitor_stream_open;
   runtime->visit_path_value_buffer = lonejson__runtime_visit_path_value_buffer;
   runtime->visit_path_value_cstr = lonejson__runtime_visit_path_value_cstr;
   runtime->visit_path_value_reader = lonejson__runtime_visit_path_value_reader;
@@ -1433,6 +1434,8 @@ const char *lonejson_status_string(lonejson_status status) {
     return "unsupported";
   case LONEJSON_STATUS_INTERNAL_ERROR:
     return "internal_error";
+  case LONEJSON_STATUS_PAUSED:
+    return "paused";
   default:
     return "unknown";
   }
@@ -3192,6 +3195,256 @@ static lonejson_status lonejson__runtime_snapshot_visit_policy(
   }
   return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
                              0u, "lonejson runtime is required");
+}
+
+typedef struct lonejson__value_visitor_stream {
+  lonejson_value_visitor_stream api;
+  lonejson_value_visitor visitor;
+  lonejson_json_value value;
+  lonejson_parser parser;
+  lonejson_error callback_error;
+  size_t allocation_size;
+  size_t remaining_bytes;
+  int limited;
+  int eof;
+} lonejson__value_visitor_stream;
+
+lonejson_value_visitor_stream *
+lonejson_value_visitor_stream_open(lonejson *runtime,
+                                   const lonejson_value_visitor *visitor,
+                                   void *user, lonejson_error *error) {
+  lonejson__value_visitor_stream *state;
+  lonejson__value_limits limits;
+  lonejson__value_limits defaults;
+  lonejson_allocator storage;
+  const lonejson_allocator *allocator;
+  lonejson__parse_options options;
+  size_t token_bytes;
+  size_t allocation_size;
+  /* The token scratch reserves three bytes beyond the token itself. */
+  const size_t overhead =
+      sizeof(*state) + LONEJSON__PARSER_WORKSPACE_SLACK + 3u;
+
+  if (visitor == NULL) {
+    lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 1u, 0u,
+                        "value visitor is required");
+    return NULL;
+  }
+  if (lonejson__runtime_snapshot_visit_policy(runtime, &limits, &storage,
+                                              &allocator,
+                                              error) != LONEJSON_STATUS_OK) {
+    return NULL;
+  }
+  defaults = lonejson__default_value_limits();
+  if (limits.max_depth == 0u) {
+    limits.max_depth = defaults.max_depth;
+  }
+  if (limits.max_key_bytes == 0u) {
+    limits.max_key_bytes = defaults.max_key_bytes;
+  }
+  if (limits.max_string_bytes == 0u) {
+    limits.max_string_bytes = defaults.max_string_bytes;
+  }
+  if (limits.max_number_bytes == 0u) {
+    limits.max_number_bytes = defaults.max_number_bytes;
+  }
+  token_bytes = limits.max_number_bytes;
+  if (token_bytes < sizeof("false") - 1u) {
+    token_bytes = sizeof("false") - 1u;
+  }
+  if (token_bytes > (size_t)-1 - overhead ||
+      limits.max_depth >
+          ((size_t)-1 - overhead - token_bytes) / sizeof(lonejson_frame)) {
+    lonejson__set_error(error, LONEJSON_STATUS_OVERFLOW, 0u, 1u, 0u,
+                        "value visitor workspace size overflow");
+    return NULL;
+  }
+  allocation_size =
+      overhead + token_bytes + lonejson__frame_bytes(limits.max_depth);
+  state = (lonejson__value_visitor_stream *)lonejson__buffer_alloc(
+      allocator, allocation_size);
+  if (state == NULL) {
+    lonejson__set_error(error, LONEJSON_STATUS_ALLOCATION_FAILED, 0u, 1u, 0u,
+                        "failed to allocate value visitor stream");
+    return NULL;
+  }
+  state->api.push = lonejson_value_visitor_stream_push;
+  state->api.finish = lonejson_value_visitor_stream_finish;
+  state->api.close = lonejson_value_visitor_stream_close;
+  state->visitor = *visitor;
+  state->allocation_size = allocation_size;
+  state->limited = limits.max_total_bytes != 0u;
+  state->remaining_bytes = limits.max_total_bytes;
+  state->eof = 0;
+  lonejson_json_value_init_with_allocator(&state->value, allocator);
+  (void)lonejson_json_value_set_parse_visitor(&state->value, &state->visitor,
+                                              user, NULL);
+  state->value.parse_visitor_limits = limits;
+  options = lonejson__default_parse_options();
+  options.allocator = &state->value.allocator;
+  options.max_depth = limits.max_depth;
+  lonejson__parser_init_state(&state->parser, NULL, NULL, &options, NULL, 1, 0,
+                              0, 0u, (unsigned char *)(state + 1),
+                              allocation_size - sizeof(*state));
+  state->parser.visit_callback_error = &state->callback_error;
+  lonejson__parser_set_json_stream_value(&state->parser, &state->value);
+  lonejson__clear_error(error);
+  return &state->api;
+}
+
+static lonejson_status
+lonejson__value_visitor_drain_number(lonejson__value_visitor_stream *state) {
+  lonejson_parser *parser = &state->parser;
+  const lonejson_value_visitor *visitor = &state->visitor;
+  void *user = state->value.parse_visitor_user;
+
+  while (!parser->visit_paused &&
+         parser->visit_number_phase != LONEJSON__VISIT_NUMBER_NONE) {
+    lonejson_status status = LONEJSON_STATUS_OK;
+
+    switch (parser->visit_number_phase) {
+    case LONEJSON__VISIT_NUMBER_BEGIN:
+      parser->visit_number_phase = LONEJSON__VISIT_NUMBER_CHUNK;
+      if (visitor->number_begin != NULL) {
+        status = visitor->number_begin(
+            user, lonejson__json_value_visit_error_output(parser));
+      }
+      break;
+    case LONEJSON__VISIT_NUMBER_CHUNK:
+      parser->visit_number_phase = LONEJSON__VISIT_NUMBER_END;
+      if (visitor->number_chunk != NULL) {
+        status = visitor->number_chunk(
+            user, parser->token.data, parser->token.len,
+            lonejson__json_value_visit_error_output(parser));
+      }
+      break;
+    case LONEJSON__VISIT_NUMBER_END:
+      parser->visit_number_phase = LONEJSON__VISIT_NUMBER_NONE;
+      if (visitor->number_end != NULL) {
+        status = visitor->number_end(
+            user, lonejson__json_value_visit_error_output(parser));
+      }
+      break;
+    case LONEJSON__VISIT_NUMBER_NONE:
+      break;
+    }
+    status = lonejson__json_value_visit_status(parser, status);
+    if (status != LONEJSON_STATUS_OK) {
+      return status;
+    }
+  }
+  return LONEJSON_STATUS_OK;
+}
+
+static lonejson_status lonejson__value_visitor_stream_result(
+    lonejson_parser *parser, lonejson_status status, lonejson_error *error) {
+  if (status != LONEJSON_STATUS_OK) {
+    parser->failed = 1;
+    if (error != NULL) {
+      *error = parser->error;
+    }
+    return status;
+  }
+  lonejson__clear_error(error);
+  return parser->visit_paused ? LONEJSON_STATUS_PAUSED : LONEJSON_STATUS_OK;
+}
+
+lonejson_status
+lonejson_value_visitor_stream_push(lonejson_value_visitor_stream *stream,
+                                   const void *data, size_t len,
+                                   size_t *consumed, lonejson_error *error) {
+  lonejson__value_visitor_stream *state =
+      (lonejson__value_visitor_stream *)stream;
+  const unsigned char *bytes = (const unsigned char *)data;
+  size_t available = len;
+  lonejson_status status;
+  lonejson_parser *parser;
+
+  if (consumed != NULL) {
+    *consumed = 0u;
+  }
+  if (state == NULL || consumed == NULL || (data == NULL && len != 0u)) {
+    return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
+                               0u, "stream, input and consumed are required");
+  }
+  parser = &state->parser;
+  if (parser->failed) {
+    return lonejson__value_visitor_stream_result(parser, parser->error.code,
+                                                 error);
+  }
+  if (state->eof) {
+    return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
+                               0u, "value visitor input is already finished");
+  }
+  if (state->limited && available > state->remaining_bytes) {
+    available = state->remaining_bytes;
+  }
+  parser->visit_paused = 0;
+  status = lonejson__value_visitor_drain_number(state);
+  while (status == LONEJSON_STATUS_OK && !parser->visit_paused &&
+         *consumed < available) {
+    size_t used = 0u;
+
+    status = lonejson__parser_feed_bytes(parser, bytes + *consumed,
+                                         available - *consumed, &used, 0);
+    *consumed += used;
+    if (status == LONEJSON_STATUS_OK) {
+      status = lonejson__value_visitor_drain_number(state);
+    }
+  }
+  if (state->limited) {
+    state->remaining_bytes -= *consumed;
+    if (status == LONEJSON_STATUS_OK && !parser->visit_paused &&
+        available < len) {
+      status = lonejson__set_error(
+          &parser->error, LONEJSON_STATUS_OVERFLOW, parser->error.offset,
+          parser->error.line, parser->error.column,
+          "JSON value exceeds maximum total byte limit");
+    }
+  }
+  return lonejson__value_visitor_stream_result(parser, status, error);
+}
+
+lonejson_status
+lonejson_value_visitor_stream_finish(lonejson_value_visitor_stream *stream,
+                                     lonejson_error *error) {
+  lonejson__value_visitor_stream *state =
+      (lonejson__value_visitor_stream *)stream;
+  lonejson_parser *parser;
+  lonejson_status status;
+
+  if (state == NULL) {
+    return lonejson__set_error(error, LONEJSON_STATUS_INVALID_ARGUMENT, 0u, 0u,
+                               0u, "value visitor stream is required");
+  }
+  parser = &state->parser;
+  if (parser->failed) {
+    return lonejson__value_visitor_stream_result(parser, parser->error.code,
+                                                 error);
+  }
+  parser->visit_paused = 0;
+  if (!state->eof) {
+    state->eof = 1;
+    status = lonejson_parser_finish(parser);
+    if (status != LONEJSON_STATUS_OK) {
+      return lonejson__value_visitor_stream_result(parser, status, error);
+    }
+  }
+  status = lonejson__value_visitor_drain_number(state);
+  return lonejson__value_visitor_stream_result(parser, status, error);
+}
+
+void lonejson_value_visitor_stream_close(
+    lonejson_value_visitor_stream *stream) {
+  lonejson__value_visitor_stream *state =
+      (lonejson__value_visitor_stream *)stream;
+
+  if (state != NULL) {
+    lonejson_parser_destroy(&state->parser);
+    lonejson_json_value_cleanup(&state->value);
+    lonejson__buffer_free(&state->parser.allocator, state,
+                          state->allocation_size);
+  }
 }
 
 lonejson_status

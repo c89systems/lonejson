@@ -1,23 +1,24 @@
 # Receiver API coverage
 
 Instance operations have both a public free function and an equivalent receiver
-method. The receiver is the first method argument. Constructors and initializers
-can be free functions or methods on the owning runtime; they do not require a
-method pointer in uninitialized destination storage.
+method. The receiver is the first method argument. Constructors that take an
+existing runtime also belong on that runtime. Initializers that prepare
+caller-owned storage can be called as free functions before the receiver exists.
 
 Runtime record `init`, `reset`, and `cleanup` methods, their free functions, and
 short aliases return `lonejson_status` and accept an optional error output.
 Traversal-workspace allocation failure preserves the record for retry. See
 [checked record lifecycle](api.md#checked-record-lifecycle) for ownership and
-ABI 28 requirements.
+error handling.
 
-The public API exposes these 19 receiver surfaces:
+The public API exposes these 20 receiver surfaces:
 
 | Surface | Operations checked |
 | --- | --- |
-| `lonejson` | Parsing, validation, visitors, record mutation, stream creation, rewriting, serialization, generators, SSE JSON, and enabled auth/HTTP/curl helpers. |
+| `lonejson` | Parsing, validation, visitors, resumable visitor creation, record mutation, stream creation, rewriting, serialization, generators, SSE JSON, and enabled auth/HTTP/curl helpers. |
 | `lonejson_stream` | Next, last error, close. |
 | `lonejson_array_stream` | Record reuse, mapped/raw next, mapped/string push and finish, last error, close. |
+| `lonejson_value_visitor_stream` | Push, finish, close. Open it through the runtime or the free function. |
 | `lonejson_sse` | Push, finish, mapped/arbitrary JSON push and finish, close. |
 | `lonejson_multipart` | Push, finish, close. |
 | `lonejson_spooled` | Reset, cleanup, size, spill state, append, rewind, read, write. |
@@ -52,5 +53,7 @@ functions remain available. Constructors are called before receiver storage
 exists, and plain data helpers remain on their runtime or free-function surface.
 
 Receiver layouts form part of the shared-library ABI, published as
-`LONEJSON_ABI_VERSION`. Rebuild consumers when that ABI changes. The borrowed
-schema/record view interface is versioned independently.
+`LONEJSON_ABI_VERSION`. The runtime's `value_visitor_stream_open` method
+advances the ABI from v0.48.0's 28 to 29. Rebuild consumers with matching
+headers and library. The borrowed schema/record view interface is versioned
+independently.

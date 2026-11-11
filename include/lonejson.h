@@ -526,7 +526,7 @@ extern "C" {
 /** Patch component of the lonejson header version. */
 #define LONEJSON_VERSION_PATCH 0
 /** Shared-library ABI / SONAME version for binary compatibility tracking. */
-#define LONEJSON_ABI_VERSION 28
+#define LONEJSON_ABI_VERSION 29
 
 /** Marks a mapping field as required during parse. */
 #define LONEJSON_FIELD_REQUIRED (1u << 0)
@@ -659,7 +659,9 @@ typedef enum lonejson_status {
   /** The operation is valid, but unsupported for the selected runtime shape. */
   LONEJSON_STATUS_UNSUPPORTED,
   /** lonejson encountered an unexpected internal state. */
-  LONEJSON_STATUS_INTERNAL_ERROR
+  LONEJSON_STATUS_INTERNAL_ERROR,
+  /** A resumable value visitor accepted an event and requested a pause. */
+  LONEJSON_STATUS_PAUSED
 } lonejson_status;
 
 /** Internal field categories understood by `lonejson_field` maps. Most users
@@ -2481,6 +2483,56 @@ typedef struct lonejson_value_visitor {
   lonejson_value_event_fn null_value;
 } lonejson_value_visitor;
 
+/** Library-owned receiver for visiting one push-fed JSON value. */
+typedef struct lonejson_value_visitor_stream lonejson_value_visitor_stream;
+
+/** Create with lonejson_value_visitor_stream_open() and release with close().
+ * The receiver cannot be copied or used concurrently or from its callbacks.
+ */
+struct lonejson_value_visitor_stream {
+  /** Feeds input and reports how many bytes were consumed. */
+  lonejson_status (*push)(lonejson_value_visitor_stream *stream,
+                          const void *data, size_t len, size_t *consumed,
+                          lonejson_error *error);
+  /** Signals EOF and resumes any final callbacks. */
+  lonejson_status (*finish)(lonejson_value_visitor_stream *stream,
+                            lonejson_error *error);
+  /** Releases the receiver, including when paused or failed. */
+  void (*close)(lonejson_value_visitor_stream *stream);
+};
+
+/** Opens an incremental visitor for exactly one JSON value.
+ * Copies the visitor, runtime limits and allocator. The callback user data
+ * and allocator context must remain valid until close. Callback chunk data
+ * is borrowed for the duration of the callback. Return OK to continue or
+ * PAUSED to accept the event and yield. Any other callback status fails the
+ * stream with CALLBACK_FAILED. The callback error output supplies a message
+ * and system errno on failure. The stream reports its own input position.
+ * String and key chunks contain complete UTF-8 code points.
+ */
+lonejson_value_visitor_stream *
+lonejson_value_visitor_stream_open(lonejson *runtime,
+                                   const lonejson_value_visitor *visitor,
+                                   void *user, lonejson_error *error);
+/** Visits bytes until the input is consumed, a callback pauses, or an error
+ * occurs. consumed is required and can be zero on PAUSED. Retry with the
+ * unconsumed suffix after the consumer is ready. The stream retains no pointer
+ * to data. An empty push can drain pending events. Only JSON whitespace may
+ * follow the root value. Successful pushes require a final finish at EOF.
+ */
+lonejson_status
+lonejson_value_visitor_stream_push(lonejson_value_visitor_stream *stream,
+                                   const void *data, size_t len,
+                                   size_t *consumed, lonejson_error *error);
+/** Signals EOF. Retry finish after PAUSED, and close after success or failure.
+ * An incomplete value fails. No more input may be pushed after signaling EOF.
+ */
+lonejson_status
+lonejson_value_visitor_stream_finish(lonejson_value_visitor_stream *stream,
+                                     lonejson_error *error);
+/** Releases a visitor stream. NULL is accepted. No callbacks are invoked. */
+void lonejson_value_visitor_stream_close(lonejson_value_visitor_stream *stream);
+
 /** Path-aware visitor callbacks for one arbitrary JSON value. String values
  * and object keys are delivered as decoded UTF-8 in chunks. Number values are
  * delivered as raw token bytes in chunks. Any callback may be `NULL` when the
@@ -3093,6 +3145,12 @@ struct lonejson {
   lonejson_status (*visit_value_fd)(lonejson *runtime, int fd,
                                     const lonejson_value_visitor *visitor,
                                     void *user, lonejson_error *error);
+  /** Opens a push-fed visitor that can pause after accepting an event.
+   * See lonejson_value_visitor_stream_open() for ownership and callbacks.
+   */
+  lonejson_value_visitor_stream *(*value_visitor_stream_open)(
+      lonejson *runtime, const lonejson_value_visitor *visitor, void *user,
+      lonejson_error *error);
   /** Visits exactly one JSON value from a caller-owned buffer with path-aware
    * callbacks.
    */
@@ -6096,7 +6154,7 @@ lonejson_status lonejson_visit_value_cstr(lonejson *runtime, const char *json,
  * first complete value. The reader must behave like a blocking or
  * immediately-available source for the duration of the call. `would_block` is
  * rejected because this helper does not retain resumable visitor state across
- * calls.
+ * calls. Use lonejson_value_visitor_stream_open() for a resumable visitor.
  */
 lonejson_status lonejson_visit_value_reader(
     lonejson *runtime, lonejson_reader_fn reader, void *reader_user,
@@ -8570,6 +8628,8 @@ void lonejson_oidc_jwks_cache_parse_cleanup(
 #define LJ_STATUS_UNSUPPORTED LONEJSON_STATUS_UNSUPPORTED
 /** lonejson encountered an unexpected internal state. */
 #define LJ_STATUS_INTERNAL_ERROR LONEJSON_STATUS_INTERNAL_ERROR
+/** Alias for the resumable visitor pause status. */
+#define LJ_STATUS_PAUSED LONEJSON_STATUS_PAUSED
 
 /** JSON string stored in a fixed buffer or allocated `char *`. */
 #define LJ_FIELD_KIND_STRING LONEJSON_FIELD_KIND_STRING
@@ -8947,6 +9007,8 @@ typedef lonejson_json_value_parse_mode lj_json_value_parse_mode;
  * begin/chunk/end triplets for keys, strings, and numbers.
  */
 typedef lonejson_value_visitor lj_value_visitor;
+/** Alias for the push-fed JSON visitor receiver. */
+typedef lonejson_value_visitor_stream lj_value_visitor_stream;
 /** One decoded path segment in a parser-owned arbitrary JSON value path. */
 typedef lonejson_path_segment lj_path_segment;
 /** Current normalized location while visiting one arbitrary JSON value. */
@@ -10201,6 +10263,29 @@ LONEJSON_SHORT_ALIAS_INLINE lj_status lj_visit_value_reader(
     const lj_value_visitor *visitor, void *user, lj_error *error) {
   return lonejson_visit_value_reader(runtime, reader, reader_user, visitor,
                                      user, error);
+}
+/** Opens a push-fed JSON value visitor. See
+ * lonejson_value_visitor_stream_open(). */
+LONEJSON_SHORT_ALIAS_INLINE lj_value_visitor_stream *
+lj_value_visitor_stream_open(lonejson *runtime, const lj_value_visitor *visitor,
+                             void *user, lj_error *error) {
+  return lonejson_value_visitor_stream_open(runtime, visitor, user, error);
+}
+/** Feeds input and reports consumption or a callback pause. */
+LONEJSON_SHORT_ALIAS_INLINE lj_status
+lj_value_visitor_stream_push(lj_value_visitor_stream *stream, const void *data,
+                             size_t len, size_t *consumed, lj_error *error) {
+  return lonejson_value_visitor_stream_push(stream, data, len, consumed, error);
+}
+/** Signals EOF or resumes final callbacks after PAUSED. */
+LONEJSON_SHORT_ALIAS_INLINE lj_status lj_value_visitor_stream_finish(
+    lj_value_visitor_stream *stream, lj_error *error) {
+  return lonejson_value_visitor_stream_finish(stream, error);
+}
+/** Releases a visitor stream. */
+LONEJSON_SHORT_ALIAS_INLINE void
+lj_value_visitor_stream_close(lj_value_visitor_stream *stream) {
+  lonejson_value_visitor_stream_close(stream);
 }
 /** Visits exactly one JSON value from an open `FILE *`. The call fails on
  * malformed JSON or on trailing non-whitespace bytes after the first complete

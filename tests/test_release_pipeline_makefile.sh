@@ -225,8 +225,8 @@ done
 PATH="$workspace/bin:$PATH" make -s -C "$repo_root" MAKE="$workspace/make" finalize-slice
 cat >"$workspace/expected" <<'EXPECTED'
 format
-cmake --build --preset debug --target lonejson_tests lonejson_map_cache_no_tls_tests lonejson_short_names_tests lonejson_short_names_disabled_tests lonejson_static_link_tests lonejson_shared_link_tests
-ctest --no-tests=error --preset debug --output-on-failure -R ^lonejson_(tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|single_header_version_tests|single_header_release_version_tests|library_exports_tests)$
+cmake --build --preset debug --target lonejson_tests lonejson_value_visitor_stream_tests lonejson_map_cache_no_tls_tests lonejson_short_names_tests lonejson_short_names_disabled_tests lonejson_static_link_tests lonejson_shared_link_tests
+ctest --no-tests=error --preset debug --output-on-failure -R ^lonejson_(tests|value_visitor_stream_tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|single_header_version_tests|single_header_release_version_tests|library_exports_tests)$
 abi-check
 lua-test
 format-check

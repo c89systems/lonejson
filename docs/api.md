@@ -148,5 +148,6 @@ availability and retry. Inline object cycles and cyclic record storage return
 `LONEJSON_STATUS_INVALID_ARGUMENT`. Recursive array schemas remain supported.
 The JSON parser's input depth limit does not limit schema initialization.
 
-These signatures require shared-library ABI 28, one increment from released
-v0.47.0's ABI 27. Rebuild downstream consumers with matching headers and library.
+These signatures were introduced in v0.48.0 with shared-library ABI 28.
+Rebuild downstream consumers with matching headers and library when the
+[receiver ABI](receiver-api.md) changes.

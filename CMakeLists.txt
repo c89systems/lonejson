@@ -97,10 +97,17 @@ option(LONEJSON_BUILD_WITH_CURL "Build lonejson with curl adapter APIs enabled."
 option(LONEJSON_BUILD_WITH_OPENSSL "Build lonejson with OpenSSL-backed auth/crypto support enabled." OFF)
 option(LONEJSON_BUILD_WITH_JWT "Build lonejson with JWT/JWK auth APIs enabled." OFF)
 option(LONEJSON_BUILD_WITH_OIDC "Build lonejson with OIDC/OAuth2 helper APIs enabled." OFF)
-set(LONEJSON_ABI_VERSION "28" CACHE STRING "Shared-library ABI / SONAME version"
-    FORCE)
-
 set(LONEJSON_PUBLIC_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(lonejson_public_header "${LONEJSON_PUBLIC_INCLUDE_DIR}/lonejson.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${lonejson_public_header}")
+file(STRINGS "${lonejson_public_header}" lonejson_abi_define
+  REGEX "^#define[ \t]+LONEJSON_ABI_VERSION[ \t]+[0-9]+[ \t]*$")
+if(NOT lonejson_abi_define MATCHES "^#define[ \t]+LONEJSON_ABI_VERSION[ \t]+([1-9][0-9]*)[ \t]*$")
+  message(FATAL_ERROR "Expected one numeric LONEJSON_ABI_VERSION in ${lonejson_public_header}")
+endif()
+set(LONEJSON_ABI_VERSION "${CMAKE_MATCH_1}" CACHE STRING
+  "Shared-library ABI / SONAME version from lonejson.h" FORCE)
+
 set(LONEJSON_SHARED_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build")
 set(LONEJSON_DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dist" CACHE PATH "Directory for generated release artifacts.")
 set(LONEJSON_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -584,6 +591,11 @@ if(LONEJSON_BUILD_TESTS)
   lonejson_configure_c_target(lonejson_tests)
   add_dependencies(lonejson_tests lonejson_generate_fixtures)
   add_test(NAME lonejson_tests COMMAND lonejson_tests)
+  add_executable(lonejson_value_visitor_stream_tests tests/test_value_visitor_stream.c)
+  target_link_libraries(lonejson_value_visitor_stream_tests PRIVATE lonejson_shared)
+  lonejson_configure_c_target(lonejson_value_visitor_stream_tests)
+  add_test(NAME lonejson_value_visitor_stream_tests COMMAND lonejson_value_visitor_stream_tests)
+  list(APPEND LONEJSON_STACK_USAGE_TARGETS lonejson_value_visitor_stream_tests)
   if(UNIX)
     add_executable(lonejson_array_stream_record_reuse_tests tests/test_array_stream_record_reuse.c)
     target_link_libraries(lonejson_array_stream_record_reuse_tests PRIVATE lonejson_shared)
@@ -1311,6 +1323,7 @@ if(LONEJSON_BUILD_EXAMPLES)
     json_value_source
     sse_json_value_stream
     json_value_visitor
+    json_value_visitor_stream
     nullable_fields
     parse_file
     parse_reader

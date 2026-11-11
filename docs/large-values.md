@@ -187,9 +187,31 @@ lonejson *lj = lonejson_new(&config, &error);
 status = lonejson_visit_value_cstr(lj, json, &visitor, user, &error);
 ```
 
-Default limits are intentionally conservative. Strings, object keys, and total
-input size remain bounded; excessively deep or oversized input fails cleanly
-instead of allocating without limit.
+The runtime limits nesting, strings, object keys and number tokens. Set
+`json_value_max_total_bytes` to cap the whole input, including whitespace.
+
+For an event loop, open a `lonejson_value_visitor_stream` with
+`runtime->value_visitor_stream_open(runtime, &visitor, user, &error)` or the
+equivalent free function. Call `push` when input is available. The stream
+retains parser state between calls and visits strings and keys in chunks.
+Number callbacks receive a validated token within the configured number limit.
+Keep each input chunk small enough for the consumer to accept a string or key
+chunk of that size. Allow up to four bytes for a UTF-8 code point assembled
+across pushes or decoded from an escape.
+
+When a callback has accepted an event but needs to wait for its consumer,
+return `LONEJSON_STATUS_PAUSED`. Copy any output that must survive the callback
+into caller-owned storage. On `PAUSED`, advance the input by `consumed`, wait
+for output to drain, then push the remaining suffix. A pause can consume zero
+input bytes when a number callback is pending. The parser delivers each
+accepted event once.
+
+At input EOF, call `finish` and repeat it after each pause until it returns
+`LONEJSON_STATUS_OK` or an error. The stream validates exactly one JSON value,
+including trailing whitespace, and can report a syntax error after delivering
+some events. Close it after success, failure or cancellation. The example
+uses a single bounded output chunk and drains it before resuming the parser.
+[Resumable visitor example](../examples/json_value_visitor_stream.c).
 
 In the Lua binding, nested `json_value` nulls round-trip through the singleton
 `lj.json_null` so they remain distinguishable inside arrays and objects. A

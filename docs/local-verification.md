@@ -18,9 +18,10 @@ it does not repeat a preceding `test-cross` run. `test-all` remains a standalone
 broad confidence gate. `prerelease-hardening` is an alias for `prerelease`, since
 that graph already includes the native hardening and benchmark gates.
 
-For routine edits, `make finalize-slice` formats and builds only the core,
-map-cache, short-name and link-test targets, runs core/header/ABI checks and the
-Lua suite, then checks formatting. It reuses configured builds and does not
+For routine edits, `make finalize-slice` formats and builds the core,
+resumable visitor, map-cache, short-name and link-test targets, runs
+core/header/ABI checks and the Lua suite, then checks formatting. It reuses
+configured builds and does not
 stage examples or run the repository-wide policy fixtures. Run the matching
 lifecycle or packaging fixtures separately when changing those surfaces.
 

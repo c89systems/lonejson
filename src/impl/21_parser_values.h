@@ -794,6 +794,36 @@ lonejson__json_value_path_event(lonejson_parser *parser,
             lonejson__json_value_current_path(parser, &path), &parser->error);
 }
 
+static lonejson_error *
+lonejson__json_value_visit_error_output(lonejson_parser *parser) {
+  if (parser->visit_callback_error == NULL) {
+    return &parser->error;
+  }
+  lonejson__clear_error(parser->visit_callback_error);
+  return parser->visit_callback_error;
+}
+
+static lonejson_status
+lonejson__json_value_visit_status(lonejson_parser *parser,
+                                  lonejson_status status) {
+  const lonejson_error *callback_error = parser->visit_callback_error;
+
+  if (callback_error == NULL || status == LONEJSON_STATUS_OK) {
+    return status;
+  }
+  if (status == LONEJSON_STATUS_PAUSED) {
+    parser->visit_paused = 1;
+    return LONEJSON_STATUS_OK;
+  }
+  parser->error.system_errno = callback_error->system_errno;
+  return lonejson__set_error(
+      &parser->error, LONEJSON_STATUS_CALLBACK_FAILED, parser->error.offset,
+      parser->error.line, parser->error.column, "%.*s",
+      (int)sizeof(callback_error->message),
+      callback_error->message[0] ? callback_error->message
+                                 : "value visitor callback failed");
+}
+
 static lonejson_status
 lonejson__json_value_visit_event(lonejson_parser *parser,
                                  lonejson_value_event_fn fn) {
@@ -802,7 +832,9 @@ lonejson__json_value_visit_event(lonejson_parser *parser,
   if (!parser->json_stream_visit_active || fn == NULL) {
     return LONEJSON_STATUS_OK;
   }
-  return fn(value->parse_visitor_user, &parser->error);
+  return lonejson__json_value_visit_status(
+      parser, fn(value->parse_visitor_user,
+                 lonejson__json_value_visit_error_output(parser)));
 }
 
 static lonejson_status
@@ -853,7 +885,9 @@ lonejson__json_value_visit_chunk(lonejson_parser *parser,
   }
   parser->json_stream_total_bytes += len;
   if (fn != NULL) {
-    return fn(value->parse_visitor_user, data, len, &parser->error);
+    return lonejson__json_value_visit_status(
+        parser, fn(value->parse_visitor_user, data, len,
+                   lonejson__json_value_visit_error_output(parser)));
   }
   return LONEJSON_STATUS_OK;
 }
@@ -1313,8 +1347,10 @@ static lonejson_status lonejson__json_value_visit_bool(lonejson_parser *parser,
     if (value->parse_visitor->boolean_value == NULL) {
       return LONEJSON_STATUS_OK;
     }
-    return value->parse_visitor->boolean_value(value->parse_visitor_user,
-                                               boolean_value, &parser->error);
+    return lonejson__json_value_visit_status(
+        parser, value->parse_visitor->boolean_value(
+                    value->parse_visitor_user, boolean_value,
+                    lonejson__json_value_visit_error_output(parser)));
   }
   status = lonejson__json_value_path_begin_value(parser);
   if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
@@ -1455,6 +1491,12 @@ static lonejson_status lonejson__json_value_number(lonejson_parser *parser,
   size_t count = 0u;
 
   if (!lonejson__json_value_parse_visitor_active(parser)) {
+    return LONEJSON_STATUS_OK;
+  }
+  if (parser->visit_callback_error != NULL) {
+    /* Keep the validated token in parser->token until all three events
+     * drain. The feed loop stops before the number delimiter. */
+    parser->visit_number_phase = LONEJSON__VISIT_NUMBER_BEGIN;
     return LONEJSON_STATUS_OK;
   }
   if (!parser->json_stream_path_visit_active) {

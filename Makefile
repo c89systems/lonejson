@@ -123,8 +123,8 @@ LUA_ROCK_SOURCES := \
 	lua/lonejson/init.lua
 
 SANITIZER_CTEST_EXCLUDE := ^lonejson_lua_(target|fuzz|interop|target_runner_argument|benchmark_configuration)_tests$$
-SLICE_BUILD_TARGETS := lonejson_tests lonejson_map_cache_no_tls_tests lonejson_short_names_tests lonejson_short_names_disabled_tests lonejson_static_link_tests lonejson_shared_link_tests
-SLICE_CTEST_INCLUDE := ^lonejson_(tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|single_header_version_tests|single_header_release_version_tests|library_exports_tests)$$
+SLICE_BUILD_TARGETS := lonejson_tests lonejson_value_visitor_stream_tests lonejson_map_cache_no_tls_tests lonejson_short_names_tests lonejson_short_names_disabled_tests lonejson_static_link_tests lonejson_shared_link_tests
+SLICE_CTEST_INCLUDE := ^lonejson_(tests|value_visitor_stream_tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|single_header_version_tests|single_header_release_version_tests|library_exports_tests)$$
 
 .PHONY: \
 	help \

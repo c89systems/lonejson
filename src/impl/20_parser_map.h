@@ -354,6 +354,11 @@ static void lonejson__parser_init_state(
   parser->json_stream_visit_active = 0;
   parser->json_stream_path_visit_active = 0;
   parser->json_stream_sink_active = 0;
+  parser->visit_callback_error = NULL;
+  parser->visit_utf8_len = 0u;
+  parser->visit_utf8_expected = 0u;
+  parser->visit_paused = 0;
+  parser->visit_number_phase = LONEJSON__VISIT_NUMBER_NONE;
   parser->json_stream_depth = 0u;
   parser->json_stream_total_bytes = 0u;
   parser->json_stream_text_bytes = 0u;

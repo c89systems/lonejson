@@ -298,6 +298,13 @@ static LONEJSON__INLINE unsigned lonejson__init_cookie(const void *ptr,
   return base_magic ^ (unsigned)(bits >> 4u) ^ (unsigned)(bits >> 9u);
 }
 
+typedef enum lonejson__visit_number_phase {
+  LONEJSON__VISIT_NUMBER_NONE,
+  LONEJSON__VISIT_NUMBER_BEGIN,
+  LONEJSON__VISIT_NUMBER_CHUNK,
+  LONEJSON__VISIT_NUMBER_END
+} lonejson__visit_number_phase;
+
 struct lonejson_parser {
   lonejson_frame *frames;
   unsigned char *workspace;
@@ -343,6 +350,13 @@ struct lonejson_parser {
   int json_stream_visit_active;
   int json_stream_path_visit_active;
   int json_stream_sink_active;
+  /* Set only for a resumable visitor. */
+  lonejson_error *visit_callback_error;
+  unsigned char visit_utf8[4];
+  unsigned int visit_utf8_len;
+  unsigned int visit_utf8_expected;
+  int visit_paused;
+  lonejson__visit_number_phase visit_number_phase;
   size_t json_stream_depth;
   size_t json_stream_total_bytes;
   size_t json_stream_text_bytes;
