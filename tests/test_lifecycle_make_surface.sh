@@ -52,25 +52,9 @@ require_text './scripts/smoke_lua_src_rock.sh "$(RELEASE_ROCK)" "$(LONEJSON_LUA_
 require_text './scripts/run_release_matrix.sh'
 require_text 'ctest --preset fuzz'
 
-bench_freeze_plan=$(make --no-print-directory -C "$repo_root" -n bench-freeze-baseline)
-printf '%s\n' "$bench_freeze_plan" | grep -F 'lonejson_bench run' >/dev/null
-printf '%s\n' "$bench_freeze_plan" | grep -F 'lonejson_bench freeze-baseline' >/dev/null
-if [[ $(printf '%s\n' "$bench_freeze_plan" | grep -n -F 'lonejson_bench run' | head -n 1 | cut -d: -f1) -ge \
-      $(printf '%s\n' "$bench_freeze_plan" | grep -n -F 'lonejson_bench freeze-baseline' | head -n 1 | cut -d: -f1) ]]; then
-  printf 'C benchmark baseline freeze must record a fresh run first\n' >&2
-  exit 1
-fi
-
-lua_bench_freeze_plan=$(make --no-print-directory -C "$repo_root" -n lua-bench-freeze-baseline)
-printf '%s\n' "$lua_bench_freeze_plan" | grep -F 'lonejson_bench run' >/dev/null
-printf '%s\n' "$lua_bench_freeze_plan" | grep -F 'lonejson_lua_bench.lua run' >/dev/null
-printf '%s\n' "$lua_bench_freeze_plan" | grep -F 'lonejson_lua_bench.lua freeze-baseline' >/dev/null
-if [[ $(printf '%s\n' "$lua_bench_freeze_plan" | grep -n -F 'lonejson_lua_bench.lua run' | head -n 1 | cut -d: -f1) -ge \
-      $(printf '%s\n' "$lua_bench_freeze_plan" | grep -n -F 'lonejson_lua_bench.lua freeze-baseline' | head -n 1 | cut -d: -f1) ]]; then
-  printf 'Lua benchmark baseline freeze must record a fresh run first\n' >&2
-  exit 1
-fi
-
+for target in bench-freeze-baseline lua-bench-freeze-baseline; do
+  make --no-print-directory -C "$repo_root" -n "$target" | grep -F './scripts/benchmark.sh freeze' >/dev/null
+done
 if grep -F './scripts/run_afl_fuzz.sh' "$makefile" >/dev/null; then
   printf 'fuzz must route through scripts/fuzz.sh\n' >&2
   exit 1
@@ -143,7 +127,7 @@ fi
 darwin_lua_bench=$(make --no-print-directory -C "$repo_root" -n \
   LONEJSON_HOST_OS=Darwin lua-bench)
 printf '%s\n' "$darwin_lua_bench" |
-  grep -F 'cmake --build --preset host --target lonejson_shared' >/dev/null
+  grep -F './scripts/benchmark.sh run' >/dev/null
 
 grep -F 'keep-id:uid=0,gid=0' "$repo_root/devenv.yaml.in" >/dev/null
 grep -F 'hostIP: 127.0.0.1' "$repo_root/devenv.yaml.in" >/dev/null

@@ -40,10 +40,14 @@ function(lonejson_configure_development_runtime target)
     # collection rather than in its sysroot.  Keep these private to local
     # executables so ASan/UBSan/TSan never fall through to host runtimes.
     "${LONEJSON_BOOTLIN_TOOLCHAIN_ROOT}/${LONEJSON_BOOTLIN_TARGET_TRIPLE}/lib"
-    "${LONEJSON_BOOTLIN_TOOLCHAIN_ROOT}/${LONEJSON_BOOTLIN_TARGET_TRIPLE}/lib64"
-    "${CMAKE_CURRENT_BINARY_DIR}")
-  if(LONEJSON_CPKT_ROOT)
-    list(APPEND _lonejson_runtime_dirs "${LONEJSON_CPKT_ROOT}/lib")
+    "${LONEJSON_BOOTLIN_TOOLCHAIN_ROOT}/${LONEJSON_BOOTLIN_TARGET_TRIPLE}/lib64")
+  get_target_property(_lonejson_omit_local_dirs ${target}
+    LONEJSON_DEVELOPMENT_RUNTIME_OMIT_LOCAL_DIRS)
+  if(NOT _lonejson_omit_local_dirs)
+    list(APPEND _lonejson_runtime_dirs "${CMAKE_CURRENT_BINARY_DIR}")
+    if(LONEJSON_CPKT_ROOT)
+      list(APPEND _lonejson_runtime_dirs "${LONEJSON_CPKT_ROOT}/lib")
+    endif()
   endif()
   if(_lonejson_extra_runtime_dirs)
     list(APPEND _lonejson_runtime_dirs

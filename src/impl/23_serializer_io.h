@@ -44,7 +44,10 @@ static LONEJSON__INLINE lonejson_status lonejson__sink_buffer_exact(
         "output buffer too small");
   }
   if (len != 0u) {
-    memcpy(sink->buffer + sink->length, data, len);
+    if (len == 1u)
+      sink->buffer[sink->length] = *(const char *)data;
+    else
+      memcpy(sink->buffer + sink->length, data, len);
     sink->length += len;
   }
   return LONEJSON_STATUS_OK;
@@ -112,7 +115,10 @@ static LONEJSON__INLINE lonejson_status lonejson__sink_grow(
     sink->capacity = next_cap;
     sink->alloc_size = next_cap;
   }
-  memcpy(sink->buffer + sink->length, data, len);
+  if (len == 1u)
+    sink->buffer[sink->length] = *(const char *)data;
+  else
+    memcpy(sink->buffer + sink->length, data, len);
   sink->length += len;
   sink->needed = sink->length;
   return LONEJSON_STATUS_OK;
@@ -227,19 +233,15 @@ lonejson__emit_escaped_fragment(lonejson_sink_fn sink, void *user,
   return LONEJSON_STATUS_OK;
 }
 
-static lonejson_status lonejson__emit_escaped_bytes(lonejson_sink_fn sink,
-                                                    void *user,
-                                                    lonejson_error *error,
-                                                    const unsigned char *text,
-                                                    size_t len) {
+static lonejson_status
+lonejson__emit_escaped_bytes(lonejson_sink_fn sink, void *user,
+                             lonejson_error *error, const unsigned char *text,
+                             size_t len, const char *closing,
+                             size_t closing_len) {
   lonejson_status status;
   size_t i;
 
-  for (i = 0u; i < len; ++i) {
-    if (text[i] < 0x20u || text[i] == '"' || text[i] == '\\') {
-      break;
-    }
-  }
+  i = lonejson__plain_string_span(text, len, 0);
   if (i == len) {
     status = lonejson__emit_cstr(sink, user, error, "\"");
     if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
@@ -249,7 +251,7 @@ static lonejson_status lonejson__emit_escaped_bytes(lonejson_sink_fn sink,
     if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
       return status;
     }
-    return lonejson__emit_cstr(sink, user, error, "\"");
+    return lonejson__emit(sink, user, error, closing, closing_len);
   }
 
   status = lonejson__emit_cstr(sink, user, error, "\"");
@@ -260,22 +262,32 @@ static lonejson_status lonejson__emit_escaped_bytes(lonejson_sink_fn sink,
   if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
     return status;
   }
-  return lonejson__emit_cstr(sink, user, error, "\"");
+  return lonejson__emit(sink, user, error, closing, closing_len);
 }
 
 static lonejson_status lonejson__emit_escaped_string(lonejson_sink_fn sink,
                                                      void *user,
                                                      lonejson_error *error,
                                                      const char *text) {
-  return lonejson__emit_escaped_bytes(
-      sink, user, error, (const unsigned char *)text, LONEJSON__TEXT_LEN(text));
+  return lonejson__emit_escaped_bytes(sink, user, error,
+                                      (const unsigned char *)text,
+                                      LONEJSON__TEXT_LEN(text), "\"", 1u);
 }
 
 static LONEJSON__INLINE lonejson_status lonejson__emit_escaped_len(
     lonejson_sink_fn sink, void *user, lonejson_error *error, const char *text,
     size_t len) {
-  return lonejson__emit_escaped_bytes(sink, user, error,
-                                      (const unsigned char *)text, len);
+  return lonejson__emit_escaped_bytes(
+      sink, user, error, (const unsigned char *)text, len, "\"", 1u);
+}
+
+/* A key's closing quote and separator are one literal sink chunk. */
+static LONEJSON__INLINE lonejson_status lonejson__emit_escaped_key(
+    lonejson_sink_fn sink, void *user, lonejson_error *error, const char *text,
+    size_t len, int pretty) {
+  return lonejson__emit_escaped_bytes(
+      sink, user, error, (const unsigned char *)text, len,
+      pretty ? "\": " : "\":", pretty ? 3u : 2u);
 }
 
 static LONEJSON__INLINE lonejson_status
@@ -400,11 +412,12 @@ static lonejson_status lonejson__buffer_emit_escaped_fragment_exact(
   lonejson_status status;
 
   start = 0u;
-  for (i = 0u; i < len; ++i) {
+  i = 0u;
+  while (i < len) {
     char escape_buf[7];
-    if (text[i] >= 0x20u && text[i] != '"' && text[i] != '\\') {
-      continue;
-    }
+    i += lonejson__plain_string_span_bulk(text + i, len - i, 0);
+    if (i == len)
+      break;
     if (start != i) {
       status =
           lonejson__buffer_emit_exact(sink, error, text + start, i - start);
@@ -453,6 +466,7 @@ static lonejson_status lonejson__buffer_emit_escaped_fragment_exact(
       return status;
     }
     start = i + 1u;
+    ++i;
   }
   if (start != len) {
     status =

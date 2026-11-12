@@ -390,6 +390,91 @@ static void test_writer_value_stream_success_and_commas(void) {
   lonejson_writer_cleanup(&writer);
 }
 
+static void test_writer_value_stream_string_chunks(void) {
+  static const size_t lengths[] = {0u,  1u,  7u,  8u,  15u,  16u,  31u,
+                                   32u, 63u, 64u, 65u, 127u, 128u, 129u};
+  static const size_t chunks[] = {1u, 7u, 64u, 256u};
+  static const char escaped[] = "\\n\\\"\\\\\\u0000\\u00e9";
+  static const char encoded[] = "\\n\\\"\\\\\\u0000\xC3\xA9";
+  size_t length_index, chunk_index;
+  for (length_index = 0u; length_index < sizeof(lengths) / sizeof(lengths[0]);
+       ++length_index) {
+    for (chunk_index = 0u; chunk_index < sizeof(chunks) / sizeof(chunks[0]);
+         ++chunk_index) {
+      unsigned char output[256];
+      char plain[160], expected[256];
+      test_buffer_sink sink;
+      lonejson_writer writer;
+      lonejson_writer_value_stream stream;
+      lonejson_error error;
+      size_t length = lengths[length_index], offset, count;
+      memset(&sink, 0, sizeof(sink));
+      sink.buffer = output;
+      sink.capacity = sizeof(output);
+      memset(&stream, 0, sizeof(stream));
+      EXPECT(test_writer_init_sink(&writer, test_buffer_sink_write, &sink, NULL,
+                                   &error) == LONEJSON_STATUS_OK);
+      EXPECT(test_writer_value_stream_open(&stream, &writer, NULL, &error) ==
+             LONEJSON_STATUS_OK);
+      plain[0] = '"';
+      memset(plain + 1u, 'a', length);
+      memcpy(expected, plain, length + 1u);
+      strcpy(expected + length + 1u, encoded);
+      strcat(expected, "\"");
+      for (offset = 0u; offset < length + 1u; offset += count) {
+        count = length + 1u - offset;
+        if (count > chunks[chunk_index])
+          count = chunks[chunk_index];
+        EXPECT(lonejson_writer_value_stream_push(&stream, plain + offset, count,
+                                                 &error) == LONEJSON_STATUS_OK);
+        /* Output must reach the sink before a closing quote is available. */
+        EXPECT(sink.length == offset + count);
+        EXPECT(memcmp(output, plain, sink.length) == 0);
+      }
+      for (offset = 0u; offset < sizeof(escaped) - 1u; offset += count) {
+        count = sizeof(escaped) - 1u - offset;
+        if (count > chunks[chunk_index])
+          count = chunks[chunk_index];
+        EXPECT(lonejson_writer_value_stream_push(&stream, escaped + offset,
+                                                 count,
+                                                 &error) == LONEJSON_STATUS_OK);
+      }
+      EXPECT(sink.length == strlen(expected) - 1u);
+      EXPECT(memcmp(output, expected, sink.length) == 0);
+      EXPECT(lonejson_writer_value_stream_push(&stream, "\"", 1u, &error) ==
+             LONEJSON_STATUS_OK);
+      EXPECT(lonejson_writer_value_stream_close(&stream, &error) ==
+             LONEJSON_STATUS_OK);
+      EXPECT(lonejson_writer_finish(&writer, &error) == LONEJSON_STATUS_OK);
+      EXPECT(strcmp((const char *)output, expected) == 0);
+      lonejson_writer_cleanup(&writer);
+    }
+  }
+  {
+    unsigned char output[16];
+    test_buffer_sink sink;
+    lonejson_writer writer;
+    lonejson_writer_value_stream stream;
+    lonejson_error error;
+    memset(&sink, 0, sizeof(sink));
+    sink.buffer = output;
+    sink.capacity = sizeof(output);
+    memset(&stream, 0, sizeof(stream));
+    EXPECT(test_writer_init_sink(&writer, test_buffer_sink_write, &sink, NULL,
+                                 &error) == LONEJSON_STATUS_OK);
+    EXPECT(test_writer_value_stream_open(&stream, &writer, NULL, &error) ==
+           LONEJSON_STATUS_OK);
+    EXPECT(lonejson_writer_value_stream_push(
+               &stream, "\"abcdefghijklmnopqrstuvwxyz\"", 28u, &error) ==
+           LONEJSON_STATUS_OVERFLOW);
+    EXPECT(lonejson_writer_value_stream_push(&stream, "\"", 1u, &error) !=
+           LONEJSON_STATUS_OK);
+    EXPECT(lonejson_writer_finish(&writer, &error) != LONEJSON_STATUS_OK);
+    lonejson_writer_value_stream_cleanup(&stream);
+    lonejson_writer_cleanup(&writer);
+  }
+}
+
 static void test_writer_value_stream_method_initializers(void) {
   unsigned char out[128];
   test_buffer_sink sink;

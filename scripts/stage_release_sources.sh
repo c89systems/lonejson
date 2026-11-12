@@ -38,9 +38,15 @@ if [[ -f "$manifest_path" ]]; then
 elif [[ "$git_root" == "$repo_root" ]]; then
   mkdir -p "$workspace_root/build"
   tmp_manifest="$(mktemp "$workspace_root/build/source-manifest.XXXXXX")"
+  # Resolve ignore rules in one Git operation instead of spawning Git for
+  # every tracked path. Keep checking existence before publishing the list.
+  declare -A ignored_paths=()
+  while IFS= read -r -d '' path; do
+    ignored_paths["$path"]=1
+  done < <(git -C "$repo_root" ls-files --cached --ignored --exclude-standard -z)
   while IFS= read -r -d '' path; do
     [[ -e "$repo_root/$path" ]] || continue
-    git -C "$repo_root" check-ignore --no-index -q "$path" && continue
+    [[ ${ignored_paths["$path"]-0} == 1 ]] && continue
     printf '%s\n' "$path" >>"$tmp_manifest"
   done < <(git -C "$repo_root" ls-files -z)
   cp "$tmp_manifest" "$stage_dir/RELEASE_MANIFEST"

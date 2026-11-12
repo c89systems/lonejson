@@ -48,6 +48,20 @@ if ! grep -F '(RPATH)' <<<"$dynamic" | grep -F "$sysroot/lib" >/dev/null; then
   exit 1
 fi
 
+if [[ ${executable##*/} == lonejson_bench ]]; then
+  rpath=$(sed -n 's/.*(RPATH).*\[\(.*\)\].*/\1/p' <<<"$dynamic")
+  IFS=: read -r -a runtime_dirs <<<"$rpath"
+  for runtime_dir in "${runtime_dirs[@]}"; do
+    case "$runtime_dir" in
+      "$bootlin_root"/*) ;;
+      *)
+        printf 'standalone benchmark embeds a checkout-dependent runtime path: %s\n' \
+          "$runtime_dir" >&2
+        exit 1 ;;
+    esac
+  done
+fi
+
 resolution="$($loader --list "$executable")"
 if ! grep -F "$sysroot/lib/libc.so.6" <<<"$resolution" >/dev/null; then
   printf 'development executable resolved libc outside Bootlin sysroot: %s\n' \

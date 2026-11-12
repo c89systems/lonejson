@@ -10,13 +10,17 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define M2M_REQUEST_CAPACITY 8192u
+
 typedef struct m2m_fixture_server {
   lonejson *runtime;
   lonejson_owned_buffer store_json;
   lonejson_m2m_credential initial_credential;
   lonejson_m2m_signup signup;
   int port;
-  int max_requests;
+  int listen_fd;
+  int stop;
+  char *request_bytes;
 } m2m_fixture_server;
 
 static int write_all(int fd, const char *data, size_t len) {
@@ -228,7 +232,8 @@ static void handle_signup(m2m_fixture_server *server, int client_fd,
 }
 
 static void handle_client(m2m_fixture_server *server, int client_fd) {
-  char request_bytes[8192];
+  char *request_bytes = server->request_bytes;
+  size_t used = 0u;
   ssize_t got;
   char *path;
   char *path_end;
@@ -241,11 +246,27 @@ static void handle_client(m2m_fixture_server *server, int client_fd) {
   lonejson_error error;
   lonejson_status status;
 
-  got = read(client_fd, request_bytes, sizeof(request_bytes) - 1u);
-  if (got <= 0) {
+  request_bytes[0] = '\0';
+  while (used < M2M_REQUEST_CAPACITY - 1u) {
+    got =
+        read(client_fd, request_bytes + used, M2M_REQUEST_CAPACITY - 1u - used);
+    if (got < 0 && errno == EINTR) {
+      continue;
+    }
+    if (got <= 0) {
+      return;
+    }
+    used += (size_t)got;
+    request_bytes[used] = '\0';
+    if (strstr(request_bytes, "\r\n\r\n") != NULL) {
+      break;
+    }
+  }
+  if (strstr(request_bytes, "\r\n\r\n") == NULL) {
+    respond_json(client_fd, 400,
+                 "{\"ok\":false,\"error\":\"headers_too_large\"}");
     return;
   }
-  request_bytes[got] = '\0';
   if (strncmp(request_bytes, "GET ", 4u) != 0) {
     respond_json(client_fd, 401, "{\"ok\":false,\"error\":\"unsupported\"}");
     return;
@@ -265,6 +286,11 @@ static void handle_client(m2m_fixture_server *server, int client_fd) {
   path_token[path_len] = '\0';
   if (strcmp(path_token, "/health") == 0) {
     respond_json(client_fd, 200, "{\"ok\":true}");
+    return;
+  }
+  if (strcmp(path_token, "/shutdown") == 0) {
+    server->stop = 1;
+    respond_json(client_fd, 200, "{\"ok\":true,\"stopped\":true}");
     return;
   }
   if (strncmp(path_token, "/signup?", 8u) == 0) {
@@ -296,41 +322,95 @@ static void handle_client(m2m_fixture_server *server, int client_fd) {
   lonejson_m2m_authentication_cleanup(&auth);
 }
 
-static int run_server(m2m_fixture_server *server) {
-  int listen_fd;
+static int open_listener(m2m_fixture_server *server) {
   int yes = 1;
   struct sockaddr_in addr;
-  int handled = 0;
+  socklen_t addr_len = sizeof(addr);
 
-  listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (listen_fd < 0) {
+  server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (server->listen_fd < 0) {
+    perror("socket M2M fixture");
     return 1;
   }
-  (void)setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+  (void)setsockopt(server->listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes,
+                   sizeof(yes));
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons((uint16_t)server->port);
-  if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
-      listen(listen_fd, 8) != 0) {
-    close(listen_fd);
+  if (bind(server->listen_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+    perror("bind M2M fixture");
     return 1;
   }
-  while (handled < server->max_requests) {
-    int client_fd = accept(listen_fd, NULL, NULL);
+  if (listen(server->listen_fd, 8) != 0) {
+    perror("listen M2M fixture");
+    return 1;
+  }
+  if (getsockname(server->listen_fd, (struct sockaddr *)&addr, &addr_len) !=
+      0) {
+    perror("getsockname M2M fixture");
+    return 1;
+  }
+  server->port = (int)ntohs(addr.sin_port);
+  return 0;
+}
+
+static int run_server(m2m_fixture_server *server) {
+  while (!server->stop) {
+    int client_fd = accept(server->listen_fd, NULL, NULL);
     if (client_fd < 0) {
       if (errno == EINTR) {
         continue;
       }
-      close(listen_fd);
+      perror("accept M2M fixture");
       return 1;
     }
     handle_client(server, client_fd);
     close(client_fd);
-    ++handled;
   }
-  close(listen_fd);
   return 0;
+}
+
+static int publish_ready(const m2m_fixture_server *server, const char *path) {
+  size_t path_size = strlen(path) + sizeof(".tmp");
+  char *pending = (char *)malloc(path_size);
+  FILE *secrets;
+  int wrote;
+  int closed;
+  int result = 1;
+
+  if (pending == NULL) {
+    fprintf(stderr, "failed to allocate M2M readiness path\n");
+    return 1;
+  }
+  snprintf(pending, path_size, "%s.tmp", path);
+  secrets = fopen(pending, "wb");
+  if (secrets == NULL) {
+    perror("open M2M readiness file");
+  } else {
+    wrote = fprintf(secrets,
+                    "{\"port\":%d,\"client_id\":\"%s\",\"client_secret\":\"%"
+                    "s\",\"api_key\":\"%s\","
+                    "\"signup_url\":\"%s\",\"signup_id\":\"%s\",\"signup_"
+                    "secret\":\"%s\"}\n",
+                    server->port, server->initial_credential.client_id,
+                    server->initial_credential.client_secret,
+                    server->initial_credential.api_key, server->signup.url.data,
+                    server->signup.signup_id, server->signup.signup_secret);
+    closed = fclose(secrets);
+    if (wrote < 0 || closed != 0) {
+      perror("write M2M readiness file");
+    } else if (rename(pending, path) != 0) {
+      perror("publish M2M readiness file");
+    } else {
+      result = 0;
+    }
+  }
+  if (result != 0) {
+    unlink(pending);
+  }
+  free(pending);
+  return result;
 }
 
 int main(int argc, char **argv) {
@@ -340,12 +420,22 @@ int main(int argc, char **argv) {
   lonejson_m2m_credential_request request;
   lonejson_m2m_signup_request signup_request;
   m2m_fixture_server server;
-  FILE *secrets;
   lonejson_status status;
   char signup_base_url[128];
+  char *port_end;
+  long port;
+  int result = 1;
 
-  if (argc != 4) {
-    fprintf(stderr, "usage: %s PORT SECRETS_PATH MAX_REQUESTS\n", argv[0]);
+  if (argc != 3) {
+    fprintf(stderr, "usage: %s PORT READY_PATH (PORT=0 selects a free port)\n",
+            argv[0]);
+    return 2;
+  }
+  errno = 0;
+  port = strtol(argv[1], &port_end, 10);
+  if (errno != 0 || port_end == argv[1] || *port_end != '\0' || port < 0 ||
+      port > 65535) {
+    fprintf(stderr, "M2M port must be an integer from 0 through 65535\n");
     return 2;
   }
   memset(&server, 0, sizeof(server));
@@ -355,11 +445,8 @@ int main(int argc, char **argv) {
   lonejson_m2m_signup_init(&server.signup);
   lonejson_error_init(&error);
   lonejson_owned_buffer_init(&server.store_json);
-  server.port = atoi(argv[1]);
-  server.max_requests = atoi(argv[3]);
-  if (server.port <= 0 || server.max_requests <= 0) {
-    return 2;
-  }
+  server.port = (int)port;
+  server.listen_fd = -1;
 
   signal(SIGPIPE, SIG_IGN);
   config = lonejson_default_config();
@@ -370,7 +457,15 @@ int main(int argc, char **argv) {
   }
   if (status != LONEJSON_STATUS_OK || server.runtime == NULL) {
     fprintf(stderr, "runtime setup failed: %s\n", error.message);
-    return 1;
+    goto done;
+  }
+  server.request_bytes = (char *)malloc(M2M_REQUEST_CAPACITY);
+  if (server.request_bytes == NULL) {
+    fprintf(stderr, "failed to allocate M2M request buffer\n");
+    goto done;
+  }
+  if (open_listener(&server) != 0) {
+    goto done;
   }
 
   request.claim_json = "{\"scope\":[\"read\"],\"fixture\":\"m2m\"}";
@@ -391,28 +486,22 @@ int main(int argc, char **argv) {
   }
   if (status != LONEJSON_STATUS_OK) {
     fprintf(stderr, "credential setup failed: %s\n", error.message);
-    return 1;
+    goto done;
   }
 
-  secrets = fopen(argv[2], "wb");
-  if (secrets == NULL) {
-    perror("open secrets");
-    return 1;
+  if (publish_ready(&server, argv[2]) != 0) {
+    goto done;
   }
-  fprintf(
-      secrets,
-      "{\"client_id\":\"%s\",\"client_secret\":\"%s\",\"api_key\":\"%s\","
-      "\"signup_url\":\"%s\",\"signup_id\":\"%s\",\"signup_secret\":\"%s\"}\n",
-      server.initial_credential.client_id,
-      server.initial_credential.client_secret,
-      server.initial_credential.api_key, server.signup.url.data,
-      server.signup.signup_id, server.signup.signup_secret);
-  fclose(secrets);
 
-  status = (lonejson_status)run_server(&server);
+  result = run_server(&server);
+done:
+  if (server.listen_fd >= 0) {
+    close(server.listen_fd);
+  }
+  free(server.request_bytes);
   lonejson_m2m_signup_cleanup(&server.signup);
   lonejson_m2m_credential_cleanup(&server.initial_credential);
   lonejson_owned_buffer_free(&server.store_json);
   lonejson_free(server.runtime);
-  return status == LONEJSON_STATUS_OK ? 0 : 1;
+  return result;
 }

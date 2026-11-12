@@ -27,7 +27,7 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND LONEJSON_CAN_RUN_LUA_NATIVE_TEST
   endforeach()
   foreach(test lonejson_lua_native_tests lonejson_lua_native_fuzz_tests
       lonejson_lua_schema_cache_tests lonejson_lua_encode_stats_tests
-      lonejson_bench_baseline_history_tests lonejson_bench_retry_confirm_tests)
+      lonejson_bench_baseline_history_tests lonejson_bench_measurement_tests)
     if(TEST "${test}")
       set_tests_properties("${test}" PROPERTIES FIXTURES_REQUIRED lonejson_native_lua)
     endif()

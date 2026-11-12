@@ -12,6 +12,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
 #if defined(__has_feature)
 #if __has_feature(memory_sanitizer)
 #include <sanitizer/msan_interface.h>
@@ -204,6 +208,101 @@ typedef struct lonejson__parser_workspace_align_probe {
 #define LONEJSON__TEXT_LEN(text) strlen(text)
 #endif
 
+/* Shared by parsing and serialization. Inspect only complete words inside the
+ * input span and stop at the first quote, escape or control character. */
+static LONEJSON__INLINE size_t lonejson__plain_string_span_words(
+    const unsigned char *bytes, size_t len, int ascii_only) {
+  const lonejson_uint64 ones = ~(lonejson_uint64)0 / 255u;
+  const lonejson_uint64 highs = ones * 0x80u;
+  size_t pos = 0u;
+  while (len - pos >= sizeof(lonejson_uint64)) {
+    lonejson_uint64 word, quote, slash, special;
+    memcpy(&word, bytes + pos, sizeof(word));
+    quote = word ^ (ones * (unsigned char)'"');
+    slash = word ^ (ones * (unsigned char)'\\');
+    special = (((word - ones * 0x20u) & ~word) | ((quote - ones) & ~quote) |
+               ((slash - ones) & ~slash) | (ascii_only ? word : 0u)) &
+              highs;
+    if (special != 0u) {
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__BYTE_ORDER__) &&    \
+    defined(__ORDER_LITTLE_ENDIAN__) &&                                        \
+    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+      return pos + (size_t)__builtin_ctzll(special) / 8u;
+#else
+      break;
+#endif
+    }
+    pos += sizeof(word);
+  }
+  while (pos < len && bytes[pos] >= 0x20u && bytes[pos] != '"' &&
+         bytes[pos] != '\\' && (!ascii_only || bytes[pos] < 0x80u))
+    ++pos;
+  return pos;
+}
+
+#if defined(__SSE2__)
+/* Keep vector registers and setup out of the short-fragment parser path. */
+static LONEJSON__NOINLINE size_t lonejson__plain_string_span_simd(
+    const unsigned char *bytes, size_t len, int ascii_only) {
+  size_t pos = 0u;
+  const __m128i high = _mm_set1_epi8((char)0x80);
+  const __m128i control = _mm_set1_epi8((char)0xA0);
+  const __m128i quote = _mm_set1_epi8('"');
+  const __m128i slash = _mm_set1_epi8('\\');
+  const __m128i nonascii = ascii_only ? high : _mm_setzero_si128();
+  while (len - pos >= 16u) {
+    unsigned mask;
+    __m128i word =
+        _mm_loadu_si128((const __m128i *)(const void *)(bytes + pos));
+    __m128i special =
+        _mm_or_si128(_mm_cmpeq_epi8(word, quote), _mm_cmpeq_epi8(word, slash));
+    special = _mm_or_si128(special,
+                           _mm_cmplt_epi8(_mm_xor_si128(word, high), control));
+    special = _mm_or_si128(special, _mm_and_si128(word, nonascii));
+    mask = (unsigned)_mm_movemask_epi8(special);
+    if (mask != 0u)
+      return pos + (size_t)__builtin_ctz(mask);
+    pos += 16u;
+  }
+  return pos +
+         lonejson__plain_string_span_words(bytes + pos, len - pos, ascii_only);
+}
+#endif
+
+static LONEJSON__INLINE
+    size_t lonejson__plain_string_span_bulk(const unsigned char *bytes,
+                                            size_t len, int ascii_only) {
+#if defined(__SSE2__)
+  if (len >= 64u)
+    return lonejson__plain_string_span_simd(bytes, len, ascii_only);
+#endif
+  return lonejson__plain_string_span_words(bytes, len, ascii_only);
+}
+
+static LONEJSON__INLINE size_t lonejson__plain_string_span(
+    const unsigned char *bytes, size_t len, int ascii_only) {
+  size_t pos = 0u;
+  size_t short_end =
+      len < sizeof(lonejson_uint64) ? len : sizeof(lonejson_uint64);
+  /* Parser input usually contains short keys before the rest of the document.
+   */
+  while (pos < short_end && bytes[pos] >= 0x20u && bytes[pos] != '"' &&
+         bytes[pos] != '\\' && (!ascii_only || bytes[pos] < 0x80u))
+    ++pos;
+  if (pos != short_end || pos == len || bytes[pos] < 0x20u ||
+      bytes[pos] == '"' || bytes[pos] == '\\' ||
+      (ascii_only && bytes[pos] >= 0x80u))
+    return pos;
+  /* Finish typical keys and values before setting up the vector scan. */
+  short_end = len < 64u ? len : 64u;
+  pos += lonejson__plain_string_span_words(bytes + pos, short_end - pos,
+                                           ascii_only);
+  if (pos != short_end || pos == len)
+    return pos;
+  return pos +
+         lonejson__plain_string_span_bulk(bytes + pos, len - pos, ascii_only);
+}
+
 #if defined(LONEJSON_TEST_FORCE_NO_TLS)
 #define LONEJSON__HAS_TLS 0
 #define LONEJSON__TLS
@@ -306,25 +405,30 @@ typedef enum lonejson__visit_number_phase {
 } lonejson__visit_number_phase;
 
 struct lonejson_parser {
+  /* Keep byte-dispatch state beside input coordinates. Storage and policies
+   * follow so ordinary parsing need not visit the visitor/capture caches. */
   lonejson_frame *frames;
+  size_t frame_count;
+  lonejson_lex_mode lex_mode;
+  lonejson_string_capture_mode string_capture_mode;
+  int visit_paused;
+  lonejson__visit_number_phase visit_number_phase;
+  lonejson_error error;
+  int lex_is_key;
+  int lex_escape;
+  lonejson_uint32 unicode_pending_high;
+  int unicode_digits_needed;
+  lonejson_uint32 unicode_accum;
   unsigned char *workspace;
   size_t workspace_size;
   size_t workspace_top;
   size_t workspace_peak;
-  size_t frame_count;
   size_t self_alloc_size;
   int validate_only;
   int owns_self;
   int root_started;
   int root_finished;
   int failed;
-  lonejson_lex_mode lex_mode;
-  lonejson_string_capture_mode string_capture_mode;
-  int lex_is_key;
-  int lex_escape;
-  lonejson_uint32 unicode_pending_high;
-  int unicode_digits_needed;
-  lonejson_uint32 unicode_accum;
   int stream_value_active;
   const lonejson_field *stream_field;
   void *stream_ptr;
@@ -355,8 +459,6 @@ struct lonejson_parser {
   unsigned char visit_utf8[4];
   unsigned int visit_utf8_len;
   unsigned int visit_utf8_expected;
-  int visit_paused;
-  lonejson__visit_number_phase visit_number_phase;
   size_t json_stream_depth;
   size_t json_stream_total_bytes;
   size_t json_stream_text_bytes;
@@ -369,7 +471,6 @@ struct lonejson_parser {
   void *root_dst;
   const lonejson_runtime *runtime;
   lonejson__parse_options options;
-  lonejson_error error;
   lonejson_allocator allocator;
 };
 
@@ -802,7 +903,7 @@ static lonejson_status
 lonejson__json_value_string_begin(lonejson_parser *parser, int is_key);
 static lonejson_status
 lonejson__json_value_string_chunk(lonejson_parser *parser, const char *data,
-                                  size_t len);
+                                  size_t len, int already_plain);
 static lonejson_status lonejson__json_value_string_end(lonejson_parser *parser);
 
 static lonejson_status lonejson__set_error(lonejson_error *error,

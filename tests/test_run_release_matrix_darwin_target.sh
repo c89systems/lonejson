@@ -187,6 +187,7 @@ fi
 fixture="$tmp_dir/matrix-repo"
 mkdir -p "$fixture/scripts" "$fixture/dist" "$tmp_dir/recording-bin"
 cp "$matrix_script_path" "$fixture/scripts/run_release_matrix.sh"
+cp "$repo_root/scripts/time_step.sh" "$fixture/scripts/time_step.sh"
 cp "$repo_root/scripts/cross_test.sh" "$fixture/scripts/cross_test.sh"
 cp "$repo_root/CMakePresets.json" "$fixture/CMakePresets.json"
 export TEST_MATRIX_REAL_CTEST="$(command -v ctest)"

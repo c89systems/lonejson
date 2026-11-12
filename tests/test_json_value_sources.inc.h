@@ -586,10 +586,12 @@ static void test_json_value_parse_capture_escapes(void) {
   const char *json =
       "{"
       "\"id\":\"escape\","
-      "\"selector\":{\"text\":\"line\\n\\t\\\"\\\\\\u0001\\u0061\"},"
+      "\"selector\":{\"te\\u0078t\":\"line\\n\\t\\\"\\\\\\u0001\\u0061 "
+      "\xc3\xa9\"},"
       "\"fields\":[\"quote\\\"\",\"slash\\\\\",\"ctrl\\u0002\"]"
       "}";
-  const char *expected_selector = "{\"text\":\"line\\n\\t\\\"\\\\\\u0001a\"}";
+  const char *expected_selector =
+      "{\"text\":\"line\\n\\t\\\"\\\\\\u0001a \xc3\xa9\"}";
   const char *expected_fields = "[\"quote\\\"\",\"slash\\\\\",\"ctrl\\u0002\"]";
   test_json_value_doc doc;
   test_json_value_doc streamed;
@@ -599,6 +601,7 @@ static void test_json_value_parse_capture_escapes(void) {
   lonejson_status status;
   lonejson_stream *stream;
   lonejson_stream_result result;
+  size_t chunk_size;
 
   test_init_map(&test_json_value_doc_map, &doc);
   status = lonejson_json_value_enable_parse_capture(&doc.selector, &error);
@@ -612,27 +615,31 @@ static void test_json_value_parse_capture_escapes(void) {
   EXPECT(strcmp(doc.selector.json, expected_selector) == 0);
   EXPECT(strcmp(doc.fields.json, expected_fields) == 0);
 
-  stream_state.json = json;
-  stream_state.offset = 0u;
-  stream_state.chunk_size = 3u;
-  stream = test_stream_open_reader(&test_json_value_doc_map, test_state_reader,
-                                   &stream_state, &options, &error);
-  EXPECT(stream != NULL);
-  if (stream != NULL) {
-    test_init_map(&test_json_value_doc_map, &streamed);
-    status =
-        lonejson_json_value_enable_parse_capture(&streamed.selector, &error);
-    EXPECT(status == LONEJSON_STATUS_OK);
-    status = lonejson_json_value_enable_parse_capture(&streamed.fields, &error);
-    EXPECT(status == LONEJSON_STATUS_OK);
-    result = lonejson_stream_next(stream, &streamed, &error);
-    EXPECT(result == LONEJSON_STREAM_OBJECT);
-    if (result == LONEJSON_STREAM_OBJECT) {
-      EXPECT(strcmp(streamed.selector.json, expected_selector) == 0);
-      EXPECT(strcmp(streamed.fields.json, expected_fields) == 0);
+  for (chunk_size = 1u; chunk_size <= strlen(json); ++chunk_size) {
+    stream_state.json = json;
+    stream_state.offset = 0u;
+    stream_state.chunk_size = chunk_size;
+    stream =
+        test_stream_open_reader(&test_json_value_doc_map, test_state_reader,
+                                &stream_state, &options, &error);
+    EXPECT(stream != NULL);
+    if (stream != NULL) {
+      test_init_map(&test_json_value_doc_map, &streamed);
+      status =
+          lonejson_json_value_enable_parse_capture(&streamed.selector, &error);
+      EXPECT(status == LONEJSON_STATUS_OK);
+      status =
+          lonejson_json_value_enable_parse_capture(&streamed.fields, &error);
+      EXPECT(status == LONEJSON_STATUS_OK);
+      result = lonejson_stream_next(stream, &streamed, &error);
+      EXPECT(result == LONEJSON_STREAM_OBJECT);
+      if (result == LONEJSON_STREAM_OBJECT) {
+        EXPECT(strcmp(streamed.selector.json, expected_selector) == 0);
+        EXPECT(strcmp(streamed.fields.json, expected_fields) == 0);
+      }
+      lonejson_cleanup(&test_json_value_doc_map, &streamed, NULL);
+      lonejson_stream_close(stream);
     }
-    lonejson_cleanup(&test_json_value_doc_map, &streamed, NULL);
-    lonejson_stream_close(stream);
   }
 
   lonejson_cleanup(&test_json_value_doc_map, &doc, NULL);

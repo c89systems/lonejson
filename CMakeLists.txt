@@ -448,11 +448,14 @@ set(LONEJSON_SOURCES
   src/lonejson.c
 )
 
-add_library(lonejson_shared SHARED ${LONEJSON_SOURCES})
-add_library(lonejson_static STATIC ${LONEJSON_SOURCES})
+# Both products use the same PIC implementation, feature definitions and
+# instrumentation. Compile it once per configuration, then link both products.
+add_library(lonejson_objects OBJECT ${LONEJSON_SOURCES})
+add_library(lonejson_shared SHARED $<TARGET_OBJECTS:lonejson_objects>)
+add_library(lonejson_static STATIC $<TARGET_OBJECTS:lonejson_objects>)
 add_library(lonejson ALIAS lonejson_static)
 
-foreach(target lonejson_shared lonejson_static)
+foreach(target lonejson_objects lonejson_shared lonejson_static)
   target_include_directories(${target}
     PUBLIC
       $<BUILD_INTERFACE:${LONEJSON_PUBLIC_INCLUDE_DIR}>
@@ -531,6 +534,32 @@ if(LONEJSON_BUILD_TESTS)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/test-tmp")
   set(BUILD_TESTING ON)
   include(CTest)
+  add_executable(lonejson_bench_measurement_core_tests tests/test_bench_measurement.c)
+  target_include_directories(lonejson_bench_measurement_core_tests PRIVATE include bench)
+  target_link_libraries(lonejson_bench_measurement_core_tests PRIVATE m)
+  lonejson_configure_c_target(lonejson_bench_measurement_core_tests)
+  add_test(NAME lonejson_bench_measurement_core_tests COMMAND lonejson_bench_measurement_core_tests)
+  set_tests_properties(lonejson_bench_measurement_core_tests PROPERTIES LABELS local TIMEOUT 30)
+  add_test(NAME lonejson_bench_runner_tests COMMAND bash
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_run_benchmark.sh" "${CMAKE_CURRENT_SOURCE_DIR}")
+  set_tests_properties(lonejson_bench_runner_tests PROPERTIES LABELS "local;host-policy" TIMEOUT 30)
+  add_test(NAME lonejson_bench_reference_tests COMMAND bash
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_benchmark_reference.sh" "${CMAKE_CURRENT_SOURCE_DIR}")
+  set_tests_properties(lonejson_bench_reference_tests PROPERTIES LABELS "local;host-policy" TIMEOUT 30)
+  if(CMAKE_EXPORT_COMPILE_COMMANDS)
+    add_test(NAME lonejson_core_build_reuse_tests
+      COMMAND "${CMAKE_COMMAND}"
+        "-DROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+        "-DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_core_build_reuse.cmake")
+    set_tests_properties(lonejson_core_build_reuse_tests PROPERTIES
+      LABELS "local;host-policy" TIMEOUT 30)
+  endif()
+  add_test(NAME lonejson_header_assembly_tests
+    COMMAND "${CMAKE_COMMAND}" "-DROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_header_assembly.cmake")
+  set_tests_properties(lonejson_header_assembly_tests PROPERTIES
+    LABELS "local;host-policy" TIMEOUT 30)
   add_test(NAME lonejson_library_exports_tests COMMAND bash
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_library_exports.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_NM}" "${CMAKE_SYSTEM_NAME}"
@@ -767,9 +796,9 @@ if(LONEJSON_BUILD_TESTS)
           "${LONEJSON_LUAROCKS_EXECUTABLE}"
           "${CMAKE_CURRENT_BINARY_DIR}")
       add_test(
-        NAME lonejson_bench_retry_confirm_tests
+        NAME lonejson_bench_measurement_tests
         COMMAND "${LONEJSON_BASH_EXECUTABLE}"
-          "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bench_retry_confirm.sh"
+          "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bench_measurement.sh"
           "${CMAKE_CURRENT_SOURCE_DIR}"
           "${LONEJSON_LUA_EXECUTABLE}"
           "${LONEJSON_LUAROCKS_EXECUTABLE}"
@@ -781,7 +810,7 @@ if(LONEJSON_BUILD_TESTS)
           "${CMAKE_CURRENT_SOURCE_DIR}"
           "${LONEJSON_LUAROCKS_EXECUTABLE}")
       set_tests_properties(lonejson_bench_baseline_history_tests
-        lonejson_bench_retry_confirm_tests lonejson_lua_rock_makefile_deps_tests
+        lonejson_bench_measurement_tests lonejson_lua_rock_makefile_deps_tests
         PROPERTIES LABELS "local;host-policy")
     endif()
   endif()
@@ -931,7 +960,7 @@ if(LONEJSON_BUILD_TESTS)
   get_property(lonejson_runtime_tests DIRECTORY PROPERTY TESTS)
   if(LONEJSON_BASH_EXECUTABLE)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LonejsonLinuxPolicyTests.cmake")
-    foreach(case curl_e2e_build_selection native_lua_ctest native_host_workflows native_test_prerequisites host_policy_scope
+    foreach(case curl_e2e_build_selection native_lua_ctest native_host_workflows native_test_prerequisites host_policy_scope source_staging_filters bench_check_diagnostics
         selected_release_build package_verify_directory required_tool_discovery
         release_archive_reproducibility)
       add_test(NAME lonejson_${case}_tests
@@ -1372,19 +1401,24 @@ if(LONEJSON_BUILD_EXAMPLES)
   endif()
 endif()
 
+if(LONEJSON_BOOTLIN_TOOLCHAIN_ROOT)
+  get_filename_component(_lonejson_bench_collection
+    "${LONEJSON_BOOTLIN_TOOLCHAIN_ROOT}" NAME)
+  set(_lonejson_bench_toolchain "bootlin:${_lonejson_bench_collection}")
+elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_CROSSCOMPILING)
+  set(_lonejson_bench_toolchain "apple:${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
+else()
+  set(_lonejson_bench_toolchain "osxcross:${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
+endif()
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/benchmark-toolchain.json"
+  CONTENT "{\"compiler\":\"${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}\",\"toolchain\":\"${_lonejson_bench_toolchain}\"}\n")
+
 if(LONEJSON_BUILD_BENCHMARKS)
   add_executable(lonejson_bench bench/lonejson_bench.c)
-  if(LONEJSON_BOOTLIN_TOOLCHAIN_ROOT)
-    get_filename_component(_lonejson_bench_collection
-      "${LONEJSON_BOOTLIN_TOOLCHAIN_ROOT}" NAME)
-    set(_lonejson_bench_toolchain "bootlin:${_lonejson_bench_collection}")
-  elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_CROSSCOMPILING)
-    set(_lonejson_bench_toolchain "apple:${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
-  else()
-    set(_lonejson_bench_toolchain "osxcross:${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
-  endif()
+  target_link_libraries(lonejson_bench PRIVATE m)
   target_compile_definitions(lonejson_bench PRIVATE
-    "LONEJSON_BENCH_TOOLCHAIN=\"${_lonejson_bench_toolchain}\"")
+    "LONEJSON_BENCH_TOOLCHAIN=\"${_lonejson_bench_toolchain}\""
+    "LONEJSON_BENCH_COMPILER=\"${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}\"")
   target_include_directories(lonejson_bench PRIVATE
     "${LONEJSON_SINGLE_HEADER_ALIAS_INCLUDE_DIR}")
   # Keep the core JSON benchmark focused on JSON hot paths; protocol framing has
@@ -1396,8 +1430,17 @@ if(LONEJSON_BUILD_BENCHMARKS)
   if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(lonejson_bench PRIVATE -Wno-long-long)
   endif()
+  # The single-header benchmark links only the selected toolchain runtime.
+  # Checkout-dependent loader paths otherwise perturb its allocator state.
+  set_property(TARGET lonejson_bench PROPERTY
+    LONEJSON_DEVELOPMENT_RUNTIME_OMIT_LOCAL_DIRS TRUE)
   lonejson_configure_c_target(lonejson_bench)
   list(APPEND LONEJSON_STACK_USAGE_TARGETS lonejson_bench)
+  add_test(NAME lonejson_bench_worker_protocol_tests COMMAND "${CMAKE_COMMAND}"
+    "-DBENCH=$<TARGET_FILE:lonejson_bench>" "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_bench_worker.cmake")
+  set_tests_properties(lonejson_bench_worker_protocol_tests PROPERTIES
+    LABELS local TIMEOUT 180 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(
     NAME lonejson_bench_gate_tests
     COMMAND ${CMAKE_COMMAND}
@@ -1406,6 +1449,17 @@ if(LONEJSON_BUILD_BENCHMARKS)
   set_tests_properties(lonejson_bench_gate_tests PROPERTIES
     LABELS local
     TIMEOUT 120)
+  foreach(_case IN ITEMS "parse/buffer_fixed/lonejson" "parse/buffer_fixed/lj"
+      "parse/reader_fixed/lonejson" "stream/object_fixed/lonejson")
+    string(REPLACE "/" "_" _case_id "${_case}")
+    add_test(NAME "lonejson_bench_ownership_${_case_id}_tests"
+      COMMAND "$<TARGET_FILE:lonejson_bench>" round "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/vendor/json_test_suite/test_parsing"
+        "${CMAKE_CURRENT_BINARY_DIR}/ownership-${_case_id}.json" - "${_case}")
+    set_tests_properties("lonejson_bench_ownership_${_case_id}_tests" PROPERTIES
+      LABELS "local;benchmark-memory" TIMEOUT 120
+      ENVIRONMENT "LONEJSON_BENCH_SOURCE_REVISION=ownership-test"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+  endforeach()
 endif()
 
 if(LONEJSON_BUILD_FUZZERS)
@@ -1658,7 +1712,6 @@ add_custom_command(
     -DLONEJSON_SINGLE_HEADER_BUILD=${LONEJSON_SINGLE_HEADER_BUILD}
     -DLONEJSON_SINGLE_HEADER_BUILD_ALIAS=${LONEJSON_SINGLE_HEADER_BUILD_ALIAS}
     -DLONEJSON_SINGLE_HEADER_DIST_GZ=${LONEJSON_SINGLE_HEADER_DIST_GZ}
-    -DLONEJSON_CLANG_FORMAT_BIN=${CLANG_FORMAT_BIN}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/package_single_header.cmake
   DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/lonejson.h

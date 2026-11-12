@@ -44,7 +44,7 @@ assert_has_native_lua_tests() {
   local tests=$1
 
   printf '%s\n' "$tests" | grep -F 'lonejson_bench_baseline_history_tests' >/dev/null
-  printf '%s\n' "$tests" | grep -F 'lonejson_bench_retry_confirm_tests' >/dev/null
+  printf '%s\n' "$tests" | grep -F 'lonejson_bench_measurement_tests' >/dev/null
   printf '%s\n' "$tests" | grep -F 'lonejson_lua_rock_makefile_deps_tests' >/dev/null
 }
 
@@ -55,7 +55,7 @@ assert_lacks_native_lua_tests() {
     printf 'bench baseline Lua workflow tests must not run for non-host libc targets\n' >&2
     exit 1
   fi
-  if printf '%s\n' "$tests" | grep -F 'lonejson_bench_retry_confirm_tests' >/dev/null; then
+  if printf '%s\n' "$tests" | grep -F 'lonejson_bench_measurement_tests' >/dev/null; then
     printf 'bench retry Lua workflow tests must not run for non-host libc targets\n' >&2
     exit 1
   fi

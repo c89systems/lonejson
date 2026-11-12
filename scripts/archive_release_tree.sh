@@ -19,13 +19,27 @@ cp -pRP "$stage" "$work/$name"
 # Normalize a disposable copy so Make's staging timestamps stay valid.
 # Retain executable intent and symbolic links;
 # 1980 is also representable in ZIP's DOS timestamps.
+executable_paths=()
+regular_paths=()
 while IFS= read -r entry; do
   path="$parent/$entry"
   if [[ ! -L "$path" ]]; then
-    if [[ -d "$path" || -x "$path" ]]; then chmod 755 "$path"; else chmod 644 "$path"; fi
+    if [[ -d "$path" || -x "$path" ]]; then
+      executable_paths+=("$path")
+    else
+      regular_paths+=("$path")
+    fi
   fi
-  touch -h -t 198001010000.00 "$path"
 done <"$work/entries"
+if [[ ${#executable_paths[@]} -ne 0 ]]; then
+  printf '%s\0' "${executable_paths[@]}" | xargs -0 chmod 755
+fi
+if [[ ${#regular_paths[@]} -ne 0 ]]; then
+  printf '%s\0' "${regular_paths[@]}" | xargs -0 chmod 644
+fi
+while IFS= read -r entry; do
+  printf '%s\0' "$parent/$entry"
+done <"$work/entries" | xargs -0 touch -h -t 198001010000.00
 case "$output" in
   *.tar.gz)
     case "$(tar --version)" in

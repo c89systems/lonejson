@@ -7,9 +7,10 @@ trap 'rm -rf -- "$work"' EXIT
 fixture="$work/repo"
 mkdir -p "$fixture/scripts" "$fixture/tests" "$fixture/bench" "$work/bin"
 cp "$repo_root/scripts/"{test_lua_native,require_build_workspace,run_installed_lua}.sh "$fixture/scripts/"
-cp "$repo_root/scripts/bench_host_id.sh" "$fixture/scripts/"
+cp "$repo_root/scripts/"{bench_host_id,run_benchmark}.sh "$fixture/scripts/"
+printf '0.0.0\n' > "$fixture/VERSION"
 cp "$repo_root/tests/"test_lua_{schema_cache,encode_stats}.sh "$fixture/tests/"
-cp "$repo_root/tests/"test_bench_{baseline_history,retry_confirm}.sh "$fixture/tests/"
+cp "$repo_root/tests/"test_bench_{baseline_history,measurement}.sh "$fixture/tests/"
 cp "$repo_root/bench/lonejson_bench.c" "$fixture/bench/"
 cat >"$work/bin/make" <<'SH'
 #!/usr/bin/env bash
@@ -33,9 +34,15 @@ cat >"$work/bin/lua" <<'SH'
 set -euo pipefail
 [[ -f "$TEST_ACTIVE_ROCK/module" ]] || { printf "module 'lonejson' not found\n" >&2; exit 1; }
 case "${1##*/}" in
-  bench_baseline_history.lua|lonejson_lua_bench.lua)
+  bench_baseline_history.lua|test_bench_measurement.lua)
     [[ $(cat "$NATIVE_TEST_ROOT/build/lua-sdk/lib/selected-build") == "$NATIVE_TEST_BUILD" ]]
     [[ "$DYLD_LIBRARY_PATH" == "$NATIVE_TEST_ROOT/build/lua-sdk/lib:"* ]]
+    if [[ ${1##*/} == test_bench_measurement.lua ]]; then
+      [[ "$PWD" == "$NATIVE_TEST_ROOT" ]]
+      [[ "$LONEJSON_BENCH_TOOLCHAIN_FILE" == "$NATIVE_TEST_BUILD/benchmark-toolchain.json" ]]
+      [[ -s "$LONEJSON_BENCH_TOOLCHAIN_FILE" ]]
+      [[ "$LONEJSON_BENCH_SOURCE_REVISION" == release:0.0.0 ]]
+    fi
     printf 'lua %s\n' "${1##*/}" >>"$NATIVE_TEST_EVENTS"
     # Stop at the interpreter boundary: this fixture tests SDK ownership, while
     # the ordinary benchmark tests exercise the actual Lua behavior.
@@ -75,10 +82,12 @@ cat >"$fixture/CMakeLists.txt" <<'CMAKE'
 cmake_minimum_required(VERSION 3.21)
 project(native_lua_fixture NONE)
 enable_testing()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/benchmark-toolchain.json"
+  "{\"compiler\":\"native fixture\",\"toolchain\":\"native fixture\"}\n")
 set(CMAKE_HOST_SYSTEM_NAME "${TEST_NATIVE_HOST}")
 set(LONEJSON_CAN_RUN_LUA_NATIVE_TESTS ON)
 add_test(NAME core COMMAND "${CMAKE_COMMAND}" -E true)
-foreach(case baseline_history retry_confirm)
+foreach(case baseline_history measurement)
   add_test(NAME lonejson_bench_${case}_tests COMMAND bash
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bench_${case}.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}" "${LONEJSON_LUA_EXECUTABLE}"
@@ -90,6 +99,7 @@ CMAKE
 export NATIVE_TEST_ROOT="$fixture" NATIVE_TEST_EVENTS="$work/events"
 export NATIVE_TEST_BUILD="$fixture/build/native"
 unset LONEJSON_LIBDIR
+unset LONEJSON_BENCH_TOOLCHAIN_FILE LONEJSON_BENCH_SOURCE_REVISION
 export EXPECTED_LUA_LIBDIR="$fixture/build/lua-sdk/lib"
 cmake -S "$fixture" -B "$fixture/build/native" -G Ninja \
   -D TEST_NATIVE_HOST=Darwin -D "LONEJSON_MODULE=$repo_root/cmake/LonejsonNativeLuaTests.cmake" \
@@ -124,10 +134,10 @@ run_tests -R '^lonejson_lua_native_fuzz_tests$' >"$work/fuzz.log" 2>&1
 printf 'prepare\nlua test_lua_fuzz.lua\n' >"$work/expected"
 cmp "$work/expected" "$NATIVE_TEST_EVENTS"
 : >"$NATIVE_TEST_EVENTS"
-if run_tests -R '^lonejson_(bench_(baseline_history|retry_confirm)|lua_native)_tests$' >"$work/bench.log" 2>&1; then
+if run_tests -R '^lonejson_(bench_(baseline_history|measurement)|lua_native)_tests$' >"$work/bench.log" 2>&1; then
   printf 'benchmark ownership probes did not stop at the Lua boundary\n' >&2; exit 1
 fi
-printf 'prepare\nlua bench_baseline_history.lua\nlua lonejson_lua_bench.lua\nlua test_lua.lua\nlua test_lua_fuzz.lua\n' >"$work/expected"
+printf 'prepare\nlua bench_baseline_history.lua\nlua test_bench_measurement.lua\nlua test_lua.lua\nlua test_lua_fuzz.lua\n' >"$work/expected"
 if ! cmp "$work/expected" "$NATIVE_TEST_EVENTS"; then
   cat "$work/bench.log" >&2; exit 1
 fi

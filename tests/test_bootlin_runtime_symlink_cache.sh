@@ -37,7 +37,7 @@ cat >"$fake_readelf" <<EOF
 #!/usr/bin/env bash
 case "\${1:-}" in
   -l) printf 'Requesting program interpreter: %s]\n' "$loader" ;;
-  -d) printf '0x000000000000000f (RPATH) Library rpath: [%s/lib]\n' "$linked_sysroot" ;;
+  -d) printf '0x000000000000000f (RPATH) Library rpath: [%s/lib%s]\n' "$linked_sysroot" "\${LONEJSON_TEST_RPATH_SUFFIX:-}" ;;
   *) exit 2 ;;
 esac
 EOF
@@ -51,3 +51,15 @@ LONEJSON_BOOTLIN_TOOLCHAIN_ROOT:PATH=$cache_link/roots/x86-64--glibc--stable-202
 EOF
 
 "$repo_root/tests/test_bootlin_runtime.sh" "$build_dir" "$executable"
+
+# The standalone benchmark must not inherit unused checkout/cache directories.
+executable="$tmp_dir/lonejson_bench"
+touch "$executable"
+"$repo_root/tests/test_bootlin_runtime.sh" "$build_dir" "$executable"
+if LONEJSON_TEST_RPATH_SUFFIX=":$build_dir" \
+    "$repo_root/tests/test_bootlin_runtime.sh" "$build_dir" "$executable" \
+    >"$tmp_dir/diagnostic" 2>&1; then
+  printf 'accepted a checkout-dependent benchmark runtime path\n' >&2
+  exit 1
+fi
+grep -F 'checkout-dependent runtime path' "$tmp_dir/diagnostic" >/dev/null

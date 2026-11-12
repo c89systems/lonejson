@@ -569,6 +569,12 @@ static int ljlua_finalize_schema(ljlua_schema *schema) {
   return 0;
 }
 
+static void ljlua_compiled_path_destroy(ljlua_compiled_path *compiled) {
+  free(compiled->steps);
+  free(compiled->path);
+  free(compiled);
+}
+
 static void ljlua_schema_destroy(ljlua_schema *schema) {
   size_t i;
   ljlua_compiled_path *compiled;
@@ -585,9 +591,7 @@ static void ljlua_schema_destroy(ljlua_schema *schema) {
   compiled = schema->path_cache;
   while (compiled != NULL) {
     ljlua_compiled_path *next = compiled->next;
-    free(compiled->steps);
-    free(compiled->path);
-    free(compiled);
+    ljlua_compiled_path_destroy(compiled);
     compiled = next;
   }
   free(schema->scratch_record);

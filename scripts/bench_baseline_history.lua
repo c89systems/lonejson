@@ -40,6 +40,7 @@ end
 local function serialize_key(run)
   local parts = {
     tostring(run.schema_version),
+    tostring(run.method),
     tostring(run.timestamp_utc),
     tostring(run.host),
   }
@@ -99,6 +100,7 @@ local function load_snapshots(repo, kind, limit, host_id)
             commit_date = commit_date,
             subject = subject,
             schema = run.schema_version or "?",
+            method = run.method or "unspecified",
             run_time = run.timestamp_utc or "?",
             host = run.host or "?",
             host_id = host_id,
@@ -118,11 +120,14 @@ local function pct_delta(prior, current)
   return ((current - prior) / prior) * 100
 end
 
-local function classify(values, small, material)
+local function classify(values, small, material, snapshots)
   local severity = "ok"
   local peak = nil
   local previous = nil
-  for _, value in ipairs(values) do
+  for i, value in ipairs(values) do
+    if i > 1 and snapshots[i].method ~= snapshots[i - 1].method then
+      peak, previous = nil, nil
+    end
     if value ~= false then
       if previous then
         local delta = pct_delta(previous, value)
@@ -156,6 +161,9 @@ local function worst_regression(values, snapshots)
   local previous = nil
   local previous_label = nil
   for i, value in ipairs(values) do
+    if i > 1 and snapshots[i].method ~= snapshots[i - 1].method then
+      peak_value, peak_label, previous, previous_label = nil, nil, nil, nil
+    end
     if value ~= false then
       local candidates = {}
       if previous then
@@ -246,17 +254,17 @@ local function print_kind(kind, snapshots, small, material)
     return 0
   end
 
-  print("id  commit   date        schema run-time             host-id  results")
+  print("id  commit   date        schema run-time             host-id  results method")
   for _, snapshot in ipairs(snapshots) do
     print(string.format(
-      "%-3s %-7s %-10s %-6s %-20s %-8s %7d",
+      "%-3s %-7s %-10s %-6s %-20s %-8s %7d %s",
       snapshot.label,
       snapshot.short_commit,
       snapshot.commit_date,
       tostring(snapshot.schema),
       snapshot.run_time,
       trim(snapshot.host_id or snapshot.host, 8),
-      count_results(snapshot.results)
+      count_results(snapshot.results), trim(snapshot.method, 12)
     ))
   end
   print("")
@@ -268,7 +276,7 @@ local function print_kind(kind, snapshots, small, material)
     for _, snapshot in ipairs(snapshots) do
       values[#values + 1] = snapshot.results[name] or false
     end
-    local severity = classify(values, small, material)
+    local severity = classify(values, small, material, snapshots)
     if severity ~= "ok" then
       local worst = worst_regression(values, snapshots)
       if worst then

@@ -20,7 +20,7 @@ configure_release_target() {
         printf 'missing cpkt CURL CMake package for %s under %s\n' "$target_id" "$bundle_root/lib/cmake/CURL" >&2
         exit 1
     fi
-    cmake --preset "$preset" \
+    "$repo_root/scripts/time_step.sh" "matrix/$preset/configure" cmake --preset "$preset" \
         -D "LONEJSON_RELEASE_TARGETS=$targets" \
         -D LONEJSON_BUILD_WITH_CURL=ON \
         -D LONEJSON_BUILD_WITH_OPENSSL=ON \
@@ -36,9 +36,9 @@ run_target() {
 
     printf '\n== %s ==\n' "$preset"
     configure_release_target "$preset" "$target_id"
-    cmake --build --preset "$preset"
-    ctest --no-tests=error --preset "$preset" --output-on-failure
-    cmake --build --preset "$package_preset"
+    "$repo_root/scripts/time_step.sh" "matrix/$preset/build" cmake --build --preset "$preset"
+    "$repo_root/scripts/time_step.sh" "matrix/$preset/test" ctest --no-tests=error --preset "$preset" --output-on-failure
+    "$repo_root/scripts/time_step.sh" "matrix/$preset/package" cmake --build --preset "$package_preset"
 }
 
 run_build_only_target() {
@@ -48,8 +48,8 @@ run_build_only_target() {
 
     printf '\n== %s ==\n' "$preset"
     configure_release_target "$preset" "$target_id"
-    cmake --build --preset "$preset"
-    cmake --build --preset "$package_preset"
+    "$repo_root/scripts/time_step.sh" "matrix/$preset/build" cmake --build --preset "$preset"
+    "$repo_root/scripts/time_step.sh" "matrix/$preset/package" cmake --build --preset "$package_preset"
 }
 
 require_command cmake
@@ -107,9 +107,9 @@ else
     printf 'Skipping Darwin release target: local osxcross toolchain is unavailable\n'
 fi
 
-cmake --build --preset package-single-header
-make release-lua-artifacts
-cmake --build --preset host --target package-binary-checksums
-make package-verify-binary
+"$repo_root/scripts/time_step.sh" matrix/single-header cmake --build --preset package-single-header
+"$repo_root/scripts/time_step.sh" matrix/lua-products make release-lua-artifacts
+"$repo_root/scripts/time_step.sh" matrix/checksums cmake --build --preset host --target package-binary-checksums
+"$repo_root/scripts/time_step.sh" matrix/verify make package-verify-binary
 
 printf '\nRelease matrix completed successfully.\n'

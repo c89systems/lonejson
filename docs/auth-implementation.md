@@ -877,7 +877,7 @@ The e2e fixtures use curl as the client. Detailed JOSE branches such as `crit`,
 `key_ops` and certificate-chain/thumbprint failures are covered by C/Lua/fuzz
 checks rather than a separate live-provider scenario for each case. Use
 `make test-host-curl` for the native C suite with all auth features enabled;
-see [local verification](local-verification.md) for prerequisites and the
+see [building and verification](development.md) for prerequisites and the
 complete gate. These commands describe coverage, not a saved test result.
 
 ## Limitations

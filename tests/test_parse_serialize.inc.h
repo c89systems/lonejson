@@ -1,3 +1,649 @@
+typedef struct test_numeric_record {
+  lonejson_int64 signed_value;
+  lonejson_uint64 unsigned_value;
+  double real_value;
+  bool enabled;
+  unsigned char application_data[13];
+} test_numeric_record;
+static const lonejson_field test_numeric_fields[] = {
+    LONEJSON_FIELD_I64(test_numeric_record, signed_value, "signed"),
+    LONEJSON_FIELD_U64(test_numeric_record, unsigned_value, "unsigned"),
+    LONEJSON_FIELD_F64(test_numeric_record, real_value, "real"),
+    LONEJSON_FIELD_BOOL(test_numeric_record, enabled, "enabled")};
+LONEJSON_MAP_DEFINE(test_numeric_map, test_numeric_record, test_numeric_fields);
+static const lonejson_field test_numeric_gap_fields[] = {
+    LONEJSON_FIELD_I64(test_numeric_record, signed_value, "signed"),
+    LONEJSON_FIELD_F64(test_numeric_record, real_value, "real"),
+    LONEJSON_FIELD_BOOL(test_numeric_record, enabled, "enabled")};
+LONEJSON_MAP_DEFINE(test_numeric_gap_map, test_numeric_record,
+                    test_numeric_gap_fields);
+typedef struct test_numeric_parent {
+  test_numeric_record child;
+  lonejson_int64 other;
+} test_numeric_parent;
+static const lonejson_field test_numeric_parent_fields[] = {
+    LONEJSON_FIELD_OBJECT(test_numeric_parent, child, "child",
+                          &test_numeric_map),
+    LONEJSON_FIELD_I64(test_numeric_parent, other, "other")};
+LONEJSON_MAP_DEFINE(test_numeric_parent_map, test_numeric_parent,
+                    test_numeric_parent_fields);
+
+static void test_mapped_integer_range_boundaries(void) {
+  static const char *prefixes[] = {"922337203685477580", "-922337203685477580",
+                                   "1844674407370955161"};
+  static const unsigned int final_digits[] = {7u, 8u, 5u};
+  const lonejson_uint64 maximum = ~(lonejson_uint64)0;
+  size_t kind;
+  unsigned int digit;
+  for (kind = 0u; kind < 3u; ++kind) {
+    for (digit = 0u; digit <= 9u; ++digit) {
+      char json[96];
+      test_numeric_record value;
+      lonejson_error error;
+      lonejson_status expected = digit <= final_digits[kind]
+                                     ? LONEJSON_STATUS_OK
+                                     : LONEJSON_STATUS_TYPE_MISMATCH;
+      sprintf(json, "{\"%s\":%s%u}", kind == 2u ? "unsigned" : "signed",
+              prefixes[kind], digit);
+      EXPECT(lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                                 &value, json, &error) == expected);
+      if (expected == LONEJSON_STATUS_OK) {
+        if (kind == 2u)
+          EXPECT(value.unsigned_value == maximum - 5u + digit);
+        else {
+          lonejson_uint64 magnitude = (maximum >> 1u) - 7u + digit;
+          lonejson_int64 wanted = kind == 0u
+                                      ? (lonejson_int64)magnitude
+                                      : -((lonejson_int64)(magnitude - 1u)) - 1;
+          EXPECT(value.signed_value == wanted);
+        }
+      }
+      /* Another digit must overflow, including after the largest valid value.
+       */
+      sprintf(json, "{\"%s\":%s%u0}", kind == 2u ? "unsigned" : "signed",
+              prefixes[kind], digit);
+      EXPECT(lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                                 &value, json,
+                                 &error) == LONEJSON_STATUS_TYPE_MISMATCH);
+    }
+  }
+  for (digit = 0u; digit <= 9u; ++digit) {
+    char json[80];
+    test_numeric_record value;
+    lonejson_error error;
+    sprintf(json, "{\"signed\":%u,\"unsigned\":%u}", digit, digit);
+    EXPECT(lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                               &value, json, &error) == LONEJSON_STATUS_OK);
+    EXPECT(value.signed_value == (lonejson_int64)digit);
+    EXPECT(value.unsigned_value == (lonejson_uint64)digit);
+    sprintf(json, "{\"signed\":-%u}", digit);
+    EXPECT(lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                               &value, json, &error) == LONEJSON_STATUS_OK);
+    EXPECT(value.signed_value == -(lonejson_int64)digit);
+    sprintf(json, "{\"unsigned\":-%u}", digit);
+    EXPECT(lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                               &value, json,
+                               &error) == LONEJSON_STATUS_TYPE_MISMATCH);
+  }
+  {
+    static const char *invalid[] = {"00", "01",  "-00", "-01",
+                                    "+1", "1.0", "1e0"};
+    size_t i;
+    for (i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+      char json[80];
+      test_numeric_record value;
+      lonejson_error error;
+      sprintf(json, "{\"signed\":%s}", invalid[i]);
+      EXPECT(lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                                 &value, json, &error) != LONEJSON_STATUS_OK);
+      sprintf(json, "{\"unsigned\":%s}", invalid[i]);
+      EXPECT(lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                                 &value, json, &error) != LONEJSON_STATUS_OK);
+    }
+  }
+}
+
+static void test_ignored_number_feed_boundaries(void) {
+  static const struct {
+    const char *text;
+    int valid;
+  } numbers[] = {{"0", 1},        {"-0", 1},    {"17", 1},
+                 {"-1234567", 1}, {"1.25", 1},  {"-0.125", 1},
+                 {"1e30", 1},     {"1E-30", 1}, {"18446744073709551616", 1},
+                 {"1e4000", 1},   {"01", 0},    {"-01", 0},
+                 {"1.", 0},       {"1e", 0},    {"1e+", 0},
+                 {"-.1", 0},      {"1-2", 0},   {"1+2", 0},
+                 {"--1", 0},      {"1e+2.3", 0}};
+  static const char *formats[] = {"{\"ignored\":%s,\"signed\":17}",
+                                  "{\"ignored\":{\"n\":%s},\"signed\":17}",
+                                  "{\"ignored\":[%s],\"signed\":17}"};
+  size_t example, shape, chunk;
+  for (example = 0u; example < sizeof(numbers) / sizeof(numbers[0]);
+       ++example) {
+    for (shape = 0u; shape < sizeof(formats) / sizeof(formats[0]); ++shape) {
+      char json[160];
+      size_t length;
+      sprintf(json, formats[shape], numbers[example].text);
+      length = strlen(json);
+      for (chunk = 1u; chunk <= length; ++chunk) {
+        test_numeric_record value;
+        lonejson_parser parser;
+        unsigned char workspace[LONEJSON_PARSER_BUFFER_SIZE +
+                                LONEJSON__PARSER_WORKSPACE_SLACK];
+        lonejson_status status = LONEJSON_STATUS_OK;
+        size_t offset = 0u;
+        memset(&value, 0, sizeof(value));
+        lonejson__parser_init_state(&parser, &test_numeric_map, &value, NULL,
+                                    NULL, 0, 0, 0, 0u, workspace,
+                                    sizeof(workspace));
+        while (offset < length && status == LONEJSON_STATUS_OK) {
+          size_t count = length - offset;
+          if (count > chunk)
+            count = chunk;
+          status = lonejson_parser_feed(&parser, json + offset, count);
+          offset += count;
+        }
+        if (status == LONEJSON_STATUS_OK)
+          status = lonejson_parser_finish(&parser);
+        EXPECT(status == (numbers[example].valid
+                              ? LONEJSON_STATUS_OK
+                              : LONEJSON_STATUS_INVALID_JSON));
+        if (numbers[example].valid) {
+          EXPECT(value.signed_value == 17);
+          EXPECT(parser.error.offset == length);
+        }
+        lonejson_parser_destroy(&parser);
+      }
+    }
+  }
+  {
+    size_t digits = 2u * (size_t)LONEJSON_PARSER_BUFFER_SIZE;
+    char *json = (char *)malloc(digits + 64u);
+    test_numeric_record value;
+    lonejson_error error;
+    lonejson_status status;
+    EXPECT(json != NULL);
+    if (json == NULL)
+      return;
+    strcpy(json, "{\"ignored\":");
+    memset(json + strlen(json), '7', digits);
+    strcpy(json + strlen("{\"ignored\":") + digits, ",\"signed\":17}");
+    status = lonejson_parse_cstr(test_default_runtime(), &test_numeric_map,
+                                 &value, json, &error);
+    EXPECT(status == LONEJSON_STATUS_ALLOCATION_FAILED ||
+           status == LONEJSON_STATUS_OVERFLOW);
+    free(json);
+  }
+}
+
+static void test_schema_key_comparison_boundaries(void) {
+  size_t length, padding, position;
+  for (length = 1u; length <= 24u; ++length) {
+    for (padding = 0u; padding < 8u; ++padding) {
+      char *storage = (char *)malloc(padding + length + 1u);
+      char *key;
+      char json[80];
+      lonejson_field field = test_numeric_fields[0];
+      lonejson_map map = test_numeric_map;
+      test_numeric_record value;
+      lonejson_error error;
+      EXPECT(storage != NULL);
+      if (storage == NULL)
+        return;
+      key = storage + padding;
+      for (position = 0u; position < length; ++position)
+        key[position] = (char)('a' + position % 26u);
+      key[length] = '\0';
+      field.json_key = key;
+      field.json_key_len = length;
+      field.json_key_first = (unsigned char)key[0];
+      field.json_key_last = (unsigned char)key[length - 1u];
+      map.fields = &field;
+      map.field_count = 1u;
+      map._map_identity = NULL;
+      map._map_cookie = 0u;
+      sprintf(json, "{\"%s\":17}", key);
+      EXPECT(lonejson_parse_cstr(test_default_runtime(), &map, &value, json,
+                                 &error) == LONEJSON_STATUS_OK);
+      EXPECT(value.signed_value == 17);
+      /* Reject every single-byte mismatch, including interior bytes with
+       * matching first and last bytes. The schema allocation ends at NUL. */
+      for (position = 0u; position < length; ++position) {
+        json[2u + position] = 'z';
+        EXPECT(lonejson_parse_cstr(test_default_runtime(), &map, &value, json,
+                                   &error) == LONEJSON_STATUS_OK);
+        EXPECT(value.signed_value == 0);
+        json[2u + position] = key[position];
+      }
+      free(storage);
+    }
+  }
+}
+
+static void test_numeric_lifecycle_preserves_application_data(void) {
+  const lonejson_map *maps[] = {&test_numeric_map, &test_numeric_gap_map,
+                                &test_numeric_parent_map};
+  size_t i;
+  int reset;
+  for (i = 0u; i < sizeof(maps) / sizeof(maps[0]); ++i) {
+    for (reset = 0; reset < 2; ++reset) {
+      test_numeric_parent value;
+      unsigned char expected[sizeof(value.child.application_data)];
+      lonejson_error error;
+      memset(&value, 0x5a, sizeof(value));
+      memset(expected, 0x5a, sizeof(expected));
+      value.child.unsigned_value = 987u;
+      EXPECT((reset ? lonejson_reset(test_default_runtime(), maps[i], &value,
+                                     &error)
+                    : lonejson_init(test_default_runtime(), maps[i], &value,
+                                    &error)) == LONEJSON_STATUS_OK);
+      EXPECT(value.child.signed_value == 0);
+      EXPECT(value.child.unsigned_value == (i == 1u ? 987u : 0u));
+      EXPECT(value.child.real_value == 0.0);
+      EXPECT(value.child.enabled == 0);
+      EXPECT(memcmp(value.child.application_data, expected, sizeof(expected)) ==
+             0);
+      if (i == 2u)
+        EXPECT(value.other == 0);
+    }
+  }
+  {
+    test_numeric_record value;
+    test_numeric_record before;
+    lonejson_error error;
+    memset(&value, 0x5a, sizeof(value));
+    value.signed_value = -17;
+    value.unsigned_value = 987u;
+    value.real_value = 1.25;
+    value.enabled = 1;
+    memcpy(&before, &value, sizeof(value));
+    EXPECT(lonejson_cleanup(&test_numeric_map, &value, &error) ==
+           LONEJSON_STATUS_OK);
+    EXPECT(memcmp(&value, &before, sizeof(value)) == 0);
+  }
+}
+
+typedef struct test_empty_array_doc {
+  lonejson_object_array rows;
+} test_empty_array_doc;
+static const lonejson_field test_empty_array_fields[] = {
+    LONEJSON_FIELD_OBJECT_ARRAY(test_empty_array_doc, rows, "rows", test_item,
+                                &test_item_map, LONEJSON_OVERFLOW_FAIL)};
+LONEJSON_MAP_DEFINE(test_empty_array_map, test_empty_array_doc,
+                    test_empty_array_fields);
+
+static void test_empty_array_replacement_ownership(void) {
+  int fixed;
+  for (fixed = 0; fixed < 2; ++fixed) {
+    test_empty_array_doc value;
+    test_item storage[2];
+    test_allocator_state alloc;
+    lonejson_config config = lonejson_default_config();
+    lonejson_error error;
+    lonejson *runtime;
+    size_t runtime_bytes;
+    test_allocator_init(&alloc);
+    config.allocator = &alloc.allocator;
+    config.clear_destination_by_default = 0;
+    runtime = lonejson_new(&config, &error);
+    EXPECT(runtime != NULL);
+    if (runtime == NULL)
+      return;
+    runtime_bytes = alloc.stats.bytes_live;
+    EXPECT(lonejson_init(runtime, &test_empty_array_map, &value, &error) ==
+           LONEJSON_STATUS_OK);
+    if (fixed) {
+      value.rows.items = storage;
+      value.rows.capacity = 2u;
+      value.rows.elem_size = sizeof(storage[0]);
+      value.rows.flags = LONEJSON_ARRAY_FIXED_CAPACITY;
+    }
+    EXPECT(lonejson_parse_cstr(runtime, &test_empty_array_map, &value,
+                               "{\"rows\":[{\"id\":1,\"label\":\"one\"}]}",
+                               &error) == LONEJSON_STATUS_OK);
+    EXPECT(value.rows.count == 1u);
+    /* These items contain no owned fields. Retain empty backing storage to
+     * check that replacement frees owned storage and preserves fixed storage.
+     */
+    value.rows.count = 0u;
+    EXPECT(lonejson_parse_cstr(runtime, &test_empty_array_map, &value,
+                               "{\"rows\":[]}", &error) == LONEJSON_STATUS_OK);
+    EXPECT(value.rows.count == 0u);
+    if (fixed) {
+      EXPECT(value.rows.items == storage && value.rows.capacity == 2u);
+      EXPECT(value.rows.elem_size == sizeof(storage[0]));
+      EXPECT(value.rows.flags == LONEJSON_ARRAY_FIXED_CAPACITY);
+    } else {
+      EXPECT(value.rows.items == NULL && value.rows.capacity == 0u);
+      EXPECT(value.rows.flags == 0u);
+    }
+    EXPECT(alloc.stats.bytes_live == runtime_bytes);
+    EXPECT(lonejson_cleanup(&test_empty_array_map, &value, &error) ==
+           LONEJSON_STATUS_OK);
+    lonejson_free(runtime);
+    EXPECT(alloc.stats.bytes_live == 0u);
+  }
+}
+
+static void test_colliding_schema_cache_entries(void) {
+  lonejson_map *maps;
+  lonejson__map_flag_cache_entry *slots[LONEJSON__MAP_FLAG_CACHE_SIZE + 1u];
+  const size_t count = LONEJSON__MAP_FLAG_CACHE_SIZE + 1u;
+  size_t i, j;
+  size_t first = 0u, second = 0u;
+  if (!LONEJSON__MAP_FLAG_CACHE_ENABLED)
+    return;
+  maps = (lonejson_map *)calloc(count, sizeof(*maps));
+  EXPECT(maps != NULL);
+  if (maps == NULL)
+    return;
+  /* Discover a collision through the resolver, without duplicating its hash.
+   * More maps than slots guarantee at least one reused slot. */
+  for (i = 0u; i < count && second == 0u; ++i) {
+    maps[i] = test_numeric_map;
+    maps[i]._map_identity = &maps[i];
+    maps[i]._map_cookie = ~(lonejson_uint64)0u - i;
+    slots[i] = lonejson__map_flag_cache_slot(&maps[i]);
+    for (j = 0u; j < i; ++j) {
+      if (slots[j] == slots[i]) {
+        first = j;
+        second = i;
+        break;
+      }
+    }
+  }
+  EXPECT(second != 0u);
+  if (second != 0u) {
+    maps[second].fields = test_person_map.fields;
+    maps[second].field_count = test_person_map.field_count;
+    maps[second].struct_size = test_person_map.struct_size;
+    EXPECT(!lonejson__map_analysis_cached(&maps[first]).may_allocate);
+    EXPECT(lonejson__map_analysis_cached(&maps[second]).may_allocate);
+    /* Collisions may require reanalysis, but must not reuse another map's
+     * ownership or layout results. */
+    for (i = 0u; i < 100u; ++i) {
+      EXPECT(!lonejson__map_analysis_cached(&maps[first]).may_allocate);
+      EXPECT(lonejson__map_analysis_cached(&maps[second]).may_allocate);
+    }
+    /* A changed cookie must invalidate the previous analysis. */
+    maps[second].fields = test_numeric_map.fields;
+    maps[second].field_count = test_numeric_map.field_count;
+    maps[second].struct_size = test_numeric_map.struct_size;
+    --maps[second]._map_cookie;
+    EXPECT(!lonejson__map_analysis_cached(&maps[second]).may_allocate);
+    EXPECT(!lonejson__map_analysis_cached(&maps[first]).may_allocate);
+    maps[second].struct_size = 0u;
+    --maps[second]._map_cookie;
+    EXPECT(!lonejson__map_analysis_cached(&maps[second]).valid);
+    EXPECT(lonejson__map_analysis_cached(&maps[first]).valid);
+  }
+  free(maps);
+}
+
+typedef struct test_string_span_record {
+  char text[160];
+} test_string_span_record;
+static const lonejson_field test_string_span_fields[] = {
+    LONEJSON_FIELD_STRING_FIXED(test_string_span_record, text,
+                                "record_text_payload", LONEJSON_OVERFLOW_FAIL)};
+LONEJSON_MAP_DEFINE(test_string_span_map, test_string_span_record,
+                    test_string_span_fields);
+
+typedef struct test_string_span_trace {
+  char text[160];
+  size_t len;
+} test_string_span_trace;
+
+static lonejson_status test_string_span_chunk(void *user, const char *data,
+                                              size_t len,
+                                              lonejson_error *error) {
+  test_string_span_trace *trace = (test_string_span_trace *)user;
+  (void)error;
+  if (len >= sizeof(trace->text) - trace->len)
+    return LONEJSON_STATUS_OVERFLOW;
+  memcpy(trace->text + trace->len, data, len);
+  trace->len += len;
+  trace->text[trace->len] = '\0';
+  return LONEJSON_STATUS_OK;
+}
+
+static void test_json_whitespace_feed_boundaries(void) {
+  static const char valid[] =
+      " \t\r\n{\r\n\t\"record_text_payload\" \t:\r\n \"x y\" \r\n}\t ";
+  static const char invalid[] =
+      " \t\r\n{\r\n\t\"record_text_payload\" \t:\r\n \"x y\" \r\n, \n!}";
+  static const size_t chunks[] = {1u, 2u, 3u, 5u, 7u, 8u, 16u, sizeof(valid)};
+  size_t example, chunk_index;
+  for (example = 0u; example < 2u; ++example) {
+    const char *json = example == 0u ? valid : invalid;
+    size_t length = strlen(json);
+    for (chunk_index = 0u; chunk_index < sizeof(chunks) / sizeof(chunks[0]);
+         ++chunk_index) {
+      test_string_span_record record;
+      lonejson_parser parser;
+      unsigned char workspace[LONEJSON_PARSER_BUFFER_SIZE +
+                              LONEJSON__PARSER_WORKSPACE_SLACK];
+      lonejson_status status = LONEJSON_STATUS_OK;
+      size_t offset = 0u;
+      memset(&record, 0, sizeof(record));
+      lonejson__parser_init_state(&parser, &test_string_span_map, &record, NULL,
+                                  NULL, 0, 0, 0, 0u, workspace,
+                                  sizeof(workspace));
+      while (offset < length && status == LONEJSON_STATUS_OK) {
+        size_t count = length - offset;
+        if (count > chunks[chunk_index])
+          count = chunks[chunk_index];
+        status = lonejson_parser_feed(&parser, json + offset, count);
+        offset += count;
+      }
+      if (status == LONEJSON_STATUS_OK)
+        status = lonejson_parser_finish(&parser);
+      if (example == 0u) {
+        EXPECT(status == LONEJSON_STATUS_OK);
+        EXPECT(strcmp(record.text, "x y") == 0);
+        EXPECT(parser.error.offset == length);
+      } else {
+        const char *bad = strchr(json, '!');
+        const char *last_line = strrchr(json, '\n');
+        const char *p;
+        size_t line = 1u;
+        for (p = json; p < bad; ++p)
+          if (*p == '\n')
+            ++line;
+        EXPECT(status == LONEJSON_STATUS_INVALID_JSON);
+        EXPECT(parser.error.offset == (size_t)(bad - json) + 1u);
+        EXPECT(parser.error.line == line);
+        EXPECT(parser.error.column == (size_t)(bad - last_line));
+      }
+      lonejson_parser_destroy(&parser);
+    }
+  }
+  {
+    lonejson_error error;
+    EXPECT(lonejson_validate_cstr(test_default_runtime(), "[tru e]", &error) ==
+           LONEJSON_STATUS_INVALID_JSON);
+    EXPECT(lonejson_validate_cstr(test_default_runtime(), "[nul l]", &error) ==
+           LONEJSON_STATUS_INVALID_JSON);
+    EXPECT(lonejson_validate_cstr(test_default_runtime(), "[1 e2]", &error) ==
+           LONEJSON_STATUS_INVALID_JSON);
+  }
+}
+
+static void test_json_whitespace_runs(void) {
+  static const struct {
+    const char *json;
+    int bad;
+  } cases[] = {
+      {" \r\n{ \t\"x\" \n: [ 1 , -2.5e+1 , true , false , null , {} , [] ] } ",
+       0},
+      {"[ \n\t{ \r\"x\" : \"a b\" }, \r\n[], \t{} ]\r\n", 0},
+      {"[ \"a\\n b\", \"\", [ \t\r\n ] ]", 0},
+      {"{ \t\r\n }", 0},
+      {"[ \t\r\n ]", 0},
+      {"[ true \t, \r\n ? ]", '?'},
+      {"{ \"x\" \r\n ? 1 }", '?'},
+      {"[tru e]", ' '},
+      {"[fal se]", ' '},
+      {"[nul l]", ' '},
+      {"[1 e2]", 'e'},
+      {"[\v1]", '\v'},
+      {"[\f1]", '\f'}};
+  size_t example, chunk;
+  for (example = 0u; example < sizeof(cases) / sizeof(cases[0]); ++example) {
+    const char *json = cases[example].json;
+    size_t length = strlen(json);
+    size_t expected_offset =
+        cases[example].bad != 0
+            ? (size_t)(strchr(json, cases[example].bad) - json) + 1u
+            : length;
+    size_t line = 1u, column = 0u, position;
+    for (position = 0u; position < expected_offset; ++position) {
+      if (json[position] == '\n') {
+        ++line;
+        column = 0u;
+      } else {
+        ++column;
+      }
+    }
+    for (chunk = 1u; chunk <= length; ++chunk) {
+      lonejson_parser parser;
+      unsigned char workspace[LONEJSON_PARSER_BUFFER_SIZE +
+                              LONEJSON__PARSER_WORKSPACE_SLACK];
+      lonejson_status status = LONEJSON_STATUS_OK;
+      size_t offset = 0u;
+      lonejson__parser_init_state(&parser, NULL, NULL, NULL, NULL, 1, 0, 0, 0u,
+                                  workspace, sizeof(workspace));
+      while (offset < length && status == LONEJSON_STATUS_OK) {
+        size_t count = length - offset;
+        if (count > chunk)
+          count = chunk;
+        status = lonejson_parser_feed(&parser, json + offset, count);
+        offset += count;
+      }
+      if (status == LONEJSON_STATUS_OK)
+        status = lonejson_parser_finish(&parser);
+      EXPECT(status == (cases[example].bad != 0 ? LONEJSON_STATUS_INVALID_JSON
+                                                : LONEJSON_STATUS_OK));
+      EXPECT(parser.error.offset == expected_offset);
+      EXPECT(parser.error.line == line);
+      EXPECT(parser.error.column == column);
+      lonejson_parser_destroy(&parser);
+    }
+  }
+}
+
+static void test_string_scan_boundaries(void) {
+  static const char prefix[] = "{\"record_text_payload\":\"";
+  static const char suffix[] = "zzzzzzzz\"}";
+  static const size_t lengths[] = {
+      0u,  1u,  2u,  3u,  4u,  5u,  6u,  7u,  8u,   9u,   10u,
+      11u, 12u, 13u, 14u, 15u, 16u, 31u, 32u, 33u,  51u,  52u,
+      53u, 54u, 55u, 56u, 63u, 64u, 65u, 79u, 127u, 128u, 129u};
+  lonejson *runtime = test_default_runtime();
+  lonejson_value_visitor visitor;
+  size_t padding, length, length_index;
+  unsigned int byte;
+  memset(&visitor, 0, sizeof(visitor));
+  visitor.string_chunk = test_string_span_chunk;
+  for (padding = 0u; padding < 8u; ++padding) {
+    for (length_index = 0u; length_index < sizeof(lengths) / sizeof(lengths[0]);
+         ++length_index) {
+      length = lengths[length_index];
+      for (byte = 0u; byte <= 255u; ++byte) {
+        char encoded[2];
+        char decoded[2];
+        char expected[160];
+        size_t encoded_len = 1u, decoded_len = 1u;
+        size_t json_len;
+        unsigned char *allocation, *json;
+        lonejson_error error;
+        test_string_span_record record;
+        test_string_span_trace trace;
+        lonejson_status wanted =
+            byte < 0x20u ? LONEJSON_STATUS_INVALID_JSON : LONEJSON_STATUS_OK;
+        lonejson_value_visitor_stream *stream;
+        size_t consumed;
+        decoded[0] = encoded[0] = (char)byte;
+        if (byte == '"' || byte == '\\') {
+          encoded[0] = '\\';
+          encoded[1] = (char)byte;
+          encoded_len = 2u;
+        } else if (byte >= 0x80u) {
+          decoded[0] = encoded[0] = (char)(0xC0u | (byte >> 6u));
+          decoded[1] = encoded[1] = (char)(0x80u | (byte & 0x3Fu));
+          encoded_len = decoded_len = 2u;
+        }
+        json_len =
+            sizeof(prefix) - 1u + length + encoded_len + sizeof(suffix) - 1u;
+        /* End the allocation exactly at the input boundary for ASan/Memcheck.
+         */
+        allocation = (unsigned char *)malloc(padding + json_len);
+        EXPECT(allocation != NULL);
+        if (allocation == NULL)
+          return;
+        json = allocation + padding;
+        memcpy(json, prefix, sizeof(prefix) - 1u);
+        memset(json + sizeof(prefix) - 1u, 'a', length);
+        memcpy(json + sizeof(prefix) - 1u + length, encoded, encoded_len);
+        memcpy(json + sizeof(prefix) - 1u + length + encoded_len, suffix,
+               sizeof(suffix) - 1u);
+        memset(expected, 'a', length);
+        memcpy(expected + length, decoded, decoded_len);
+        memcpy(expected + length + decoded_len, "zzzzzzzz", 9u);
+        EXPECT(lonejson_validate_buffer(runtime, json, json_len, &error) ==
+               wanted);
+        EXPECT(lonejson_parse_buffer(runtime, &test_string_span_map, &record,
+                                     json, json_len, &error) == wanted);
+        if (wanted == LONEJSON_STATUS_OK)
+          EXPECT(strcmp(record.text, expected) == 0);
+        memset(&trace, 0, sizeof(trace));
+        EXPECT(lonejson_visit_value_buffer(runtime, json, json_len, &visitor,
+                                           &trace, &error) == wanted);
+        if (wanted == LONEJSON_STATUS_OK)
+          EXPECT(strcmp(trace.text, expected) == 0);
+        memset(&trace, 0, sizeof(trace));
+        stream = lonejson_value_visitor_stream_open(runtime, &visitor, &trace,
+                                                    &error);
+        EXPECT(stream != NULL);
+        if (stream != NULL) {
+          EXPECT(stream->push(stream, json, json_len, &consumed, &error) ==
+                 wanted);
+          if (wanted == LONEJSON_STATUS_OK) {
+            EXPECT(consumed == json_len);
+            EXPECT(stream->finish(stream, &error) == LONEJSON_STATUS_OK);
+            EXPECT(strcmp(trace.text, expected) == 0);
+          }
+          stream->close(stream);
+        }
+        if (byte != 0u) {
+          char serialized[256];
+          char sink_json[256];
+          test_buffer_sink sink;
+          test_string_span_record roundtrip;
+          size_t needed;
+          memcpy(record.text, expected, strlen(expected) + 1u);
+          EXPECT(lonejson_serialize_buffer(runtime, &test_string_span_map,
+                                           &record, serialized,
+                                           sizeof(serialized), &needed,
+                                           &error) == LONEJSON_STATUS_OK);
+          memset(&sink, 0, sizeof(sink));
+          sink.buffer = (unsigned char *)sink_json;
+          sink.capacity = sizeof(sink_json);
+          EXPECT(lonejson_serialize_sink(runtime, &test_string_span_map,
+                                         &record, test_buffer_sink_write, &sink,
+                                         &error) == LONEJSON_STATUS_OK);
+          EXPECT(strcmp(sink_json, serialized) == 0);
+          EXPECT(lonejson_parse_buffer(
+                     runtime, &test_string_span_map, &roundtrip, serialized,
+                     strlen(serialized), &error) == LONEJSON_STATUS_OK);
+          EXPECT(strcmp(roundtrip.text, expected) == 0);
+        }
+        free(allocation);
+      }
+    }
+  }
+}
+
 typedef struct test_generated_json_reader_state {
   const char *prefix;
   size_t prefix_len;

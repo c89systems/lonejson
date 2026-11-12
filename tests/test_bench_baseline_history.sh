@@ -82,8 +82,8 @@ if [[ "$git_top" == "$repo_root" ]]; then
   done
 
   for path in \
-    perflogs/hosts/f259bcc951a8f53802cc755f08e5e218/baseline.json \
-    perflogs/hosts/f259bcc951a8f53802cc755f08e5e218/lua/baseline.json; do
+    perflogs/hosts/4a8bcd8b7084137ee9c5b8ffae2e333d/baseline.json \
+    perflogs/hosts/4a8bcd8b7084137ee9c5b8ffae2e333d/lua/baseline.json; do
     if ! git -C "$repo_root" ls-files --error-unmatch "$path" >/dev/null 2>&1; then
       printf '%s must remain tracked as the frozen benchmark contract\n' "$path" >&2
       exit 1
@@ -91,8 +91,8 @@ if [[ "$git_top" == "$repo_root" ]]; then
   done
 elif [[ -f "$repo_root/RELEASE_MANIFEST" ]]; then
   for path in \
-    perflogs/hosts/f259bcc951a8f53802cc755f08e5e218/baseline.json \
-    perflogs/hosts/f259bcc951a8f53802cc755f08e5e218/lua/baseline.json; do
+    perflogs/hosts/4a8bcd8b7084137ee9c5b8ffae2e333d/baseline.json \
+    perflogs/hosts/4a8bcd8b7084137ee9c5b8ffae2e333d/lua/baseline.json; do
     if [[ ! -f "$repo_root/$path" ]] || ! grep -Fxq "$path" "$repo_root/RELEASE_MANIFEST"; then
       printf '%s must be shipped in the source manifest as the frozen benchmark contract\n' "$path" >&2
       exit 1
@@ -164,6 +164,18 @@ printf '%s\n' "$output" | grep -q 'parse/alpha/lonejson'
 printf '%s\n' "$output" | grep -q 'parse/beta/lonejson'
 printf '%s\n' "$output" | grep -q 'stream/gamma/lonejson'
 printf '%s\n' "$output" | grep -Eq 'parse/beta/lonejson.*50\.00[[:space:]]+\.[[:space:]]+55\.00'
+
+# A changed measurement method begins a new comparison group. Historical
+# timings remain visible but cannot become regression evidence for the new one.
+write_baseline 1 1 1
+sed 's/"schema_version":1/"schema_version":1,"method":"fixed-work-median"/' \
+  "$tmp_dir/perflogs/hosts/testhost/baseline.json" >"$tmp_dir/changed-method.json"
+cp "$tmp_dir/changed-method.json" "$tmp_dir/perflogs/hosts/testhost/baseline.json"
+git -C "$tmp_dir" add perflogs/hosts/testhost/baseline.json
+git -C "$tmp_dir" commit -q -m 'test(bench): change measurement method'
+changed_output=$(run_lua "$repo_root/scripts/bench_baseline_history.lua" --repo "$tmp_dir" --kind c --host-id testhost)
+printf '%s\n' "$changed_output" | grep -q 'NOTICE: 1 material regression'
+printf '%s\n' "$changed_output" | awk 'length($0) > 80 { exit 1 }'
 
 if printf '%s\n' "$output" | awk 'length($0) > 80 { exit 1 }'; then
   exit 0

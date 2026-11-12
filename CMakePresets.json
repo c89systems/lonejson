@@ -43,6 +43,7 @@
         "LONEJSON_BUILD_WITH_OPENSSL": "ON",
         "LONEJSON_BUILD_WITH_JWT": "ON",
         "LONEJSON_BUILD_WITH_OIDC": "ON",
+        "LONEJSON_BUILD_BENCHMARKS": "ON",
         "LONEJSON_TEST_TIMEOUT": "1800"
       }
     },

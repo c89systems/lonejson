@@ -170,7 +170,7 @@ static LONEJSON__INLINE lonejson_status lonejson__append_unicode_codepoint(
   }
   if (parser->string_capture_mode == LONEJSON_STRING_CAPTURE_JSON_VISITOR) {
     return lonejson__json_value_string_chunk(parser, (const char *)utf8,
-                                             utf8_len);
+                                             utf8_len, 0);
   }
   if (parser->string_capture_mode == LONEJSON_STRING_CAPTURE_STREAM) {
     lonejson_status status;
@@ -206,7 +206,7 @@ lonejson__append_string_byte(lonejson_parser *parser, unsigned char ch) {
     return lonejson__direct_string_append_bytes(parser, &ch, 1u);
   }
   if (parser->string_capture_mode == LONEJSON_STRING_CAPTURE_JSON_VISITOR) {
-    return lonejson__json_value_string_chunk(parser, (const char *)&ch, 1u);
+    return lonejson__json_value_string_chunk(parser, (const char *)&ch, 1u, 0);
   }
   if (parser->string_capture_mode == LONEJSON_STRING_CAPTURE_STREAM) {
     return lonejson__stream_value_append(parser, &ch, 1u);
@@ -341,10 +341,7 @@ lonejson__consume_string_discard_fast(lonejson_parser *parser,
     size_t start;
 
     start = pos;
-    while (pos < avail && bytes[pos] != '"' && bytes[pos] != '\\' &&
-           bytes[pos] >= 0x20u) {
-      pos++;
-    }
+    pos += lonejson__plain_string_span(bytes + pos, avail - pos, 0);
     if (pos != start) {
       parser->error.offset += pos - start;
       parser->error.column += pos - start;
@@ -441,10 +438,7 @@ lonejson__consume_string_direct_fast(lonejson_parser *parser,
     size_t start;
 
     start = pos;
-    while (pos < avail && bytes[pos] != '"' && bytes[pos] != '\\' &&
-           bytes[pos] >= 0x20u) {
-      pos++;
-    }
+    pos += lonejson__plain_string_span(bytes + pos, avail - pos, 0);
     if (pos != start) {
       lonejson_status status = lonejson__direct_string_append_bytes(
           parser, bytes + start, pos - start);
@@ -680,7 +674,7 @@ static lonejson_status lonejson__visit_utf8_byte(lonejson_parser *parser,
   if (length == parser->visit_utf8_expected) {
     parser->visit_utf8_len = 0u;
     return lonejson__json_value_string_chunk(
-        parser, (const char *)parser->visit_utf8, length);
+        parser, (const char *)parser->visit_utf8, length, 0);
   }
   return LONEJSON_STATUS_OK;
 
@@ -703,7 +697,6 @@ lonejson__consume_string_fast(lonejson_parser *parser,
   if (parser == NULL || bytes == NULL) {
     return LONEJSON_STATUS_INVALID_ARGUMENT;
   }
-  plain_limit = parser->visit_callback_error != NULL ? 0x80u : 0x100u;
   pos = 0u;
   if (parser->string_capture_mode == LONEJSON_STRING_CAPTURE_DISCARD) {
     return lonejson__consume_string_discard_fast(parser, bytes, avail, used);
@@ -714,10 +707,7 @@ lonejson__consume_string_fast(lonejson_parser *parser,
   if (parser->lex_is_key &&
       parser->string_capture_mode == LONEJSON_STRING_CAPTURE_TOKEN &&
       parser->token.len == 0u) {
-    while (pos < avail && bytes[pos] != '"' && bytes[pos] != '\\' &&
-           bytes[pos] >= 0x20u) {
-      pos++;
-    }
+    pos += lonejson__plain_string_span(bytes + pos, avail - pos, 0);
     if (pos < avail && bytes[pos] == '"') {
       parser->error.offset += pos + 1u;
       parser->error.column += pos + 1u;
@@ -729,6 +719,7 @@ lonejson__consume_string_fast(lonejson_parser *parser,
     }
     pos = 0u;
   }
+  plain_limit = parser->visit_callback_error != NULL ? 0x80u : 0x100u;
   while (pos < avail && !parser->visit_paused) {
     size_t start;
 
@@ -748,10 +739,8 @@ lonejson__consume_string_fast(lonejson_parser *parser,
     if (used != NULL) {
       *used = pos;
     }
-    while (pos < avail && bytes[pos] != '"' && bytes[pos] != '\\' &&
-           bytes[pos] >= 0x20u && bytes[pos] < plain_limit) {
-      pos++;
-    }
+    pos += lonejson__plain_string_span(bytes + pos, avail - pos,
+                                       plain_limit == 0x80u);
     if (pos != start) {
       if (parser->string_capture_mode == LONEJSON_STRING_CAPTURE_TOKEN) {
         if (!lonejson__scratch_append_bytes(&parser->token, bytes + start,
@@ -771,7 +760,7 @@ lonejson__consume_string_fast(lonejson_parser *parser,
       } else if (parser->string_capture_mode ==
                  LONEJSON_STRING_CAPTURE_JSON_VISITOR) {
         lonejson_status status = lonejson__json_value_string_chunk(
-            parser, (const char *)(bytes + start), pos - start);
+            parser, (const char *)(bytes + start), pos - start, 1);
         if (status != LONEJSON_STATUS_OK) {
           return status;
         }
@@ -891,6 +880,9 @@ static int lonejson__is_valid_json_number(const char *value, size_t len) {
   if (len == 0u) {
     return 0;
   }
+  if (len == 1u) {
+    return lonejson__is_digit((unsigned char)value[0]);
+  }
   if (value[i] == '-') {
     i++;
     if (i == len) {
@@ -906,6 +898,7 @@ static int lonejson__is_valid_json_number(const char *value, size_t len) {
     if (!lonejson__is_digit((unsigned char)value[i])) {
       return 0;
     }
+    ++i;
     while (i < len && lonejson__is_digit((unsigned char)value[i])) {
       i++;
     }
@@ -1107,7 +1100,11 @@ static lonejson_status lonejson__parser_consume_char(lonejson_parser *parser,
         LONEJSON_STATUS_OK) {
       return parser->error.code;
     }
-    return lonejson__parser_consume_char(parser, ch);
+    /* This delimiter already advanced the source position. Process it in
+     * the completed value's parent without counting the byte a second time. */
+    frame = (parser->frame_count != 0u)
+                ? &parser->frames[parser->frame_count - 1u]
+                : NULL;
   }
 
   if (parser->lex_mode == LONEJSON_LEX_TRUE) {
@@ -1579,6 +1576,38 @@ static LONEJSON__INLINE int lonejson__is_number_token_byte(unsigned char ch) {
          ch == 'e' || ch == 'E';
 }
 
+/* Unmapped numbers need grammar validation but no stored value. The caller
+ * already counted the first byte and excluded active JSON value capture.
+ * Short input fragments use the normal lexer rather than an extra scan. */
+static LONEJSON__NOINLINE lonejson_status lonejson__begin_ignored_number(
+    lonejson_parser *parser, const unsigned char *bytes, size_t len,
+    size_t *used) {
+  lonejson_status status;
+  size_t pos;
+
+  *used = 1u;
+  status = lonejson__begin_number_lex(parser, bytes[0]);
+  if (status != LONEJSON_STATUS_OK)
+    return status;
+  pos = 1u;
+  while (pos < len && lonejson__is_number_token_byte(bytes[pos]))
+    ++pos;
+  /* Preserve the token capacity and continuation behavior for spans that
+   * cannot be completed directly from this input chunk. */
+  if (pos == len || pos > parser->token.cap - 2u)
+    return LONEJSON_STATUS_OK;
+  *used = pos;
+  parser->error.offset += pos - 1u;
+  parser->error.column += pos - 1u;
+  if (!lonejson__is_valid_json_number((const char *)bytes, pos))
+    return lonejson__set_error(&parser->error, LONEJSON_STATUS_INVALID_JSON,
+                               parser->error.offset, parser->error.line,
+                               parser->error.column, "invalid JSON number");
+  parser->lex_mode = LONEJSON_LEX_NONE;
+  lonejson__scratch_reset(&parser->token);
+  return lonejson__complete_parent_after_value(parser);
+}
+
 static LONEJSON__HOT lonejson_status
 lonejson__parser_feed_bytes(lonejson_parser *parser, const unsigned char *bytes,
                             size_t len, size_t *consumed, int stop_at_root) {
@@ -1687,7 +1716,9 @@ lonejson__parser_feed_bytes(lonejson_parser *parser, const unsigned char *bytes,
     }
 
     if (parser->lex_mode == LONEJSON_LEX_NONE && parser->frame_count != 0u) {
-      lonejson_frame *active = &parser->frames[parser->frame_count - 1u];
+      lonejson_frame *active;
+
+      active = &parser->frames[parser->frame_count - 1u];
 
       parser->error.offset++;
       parser->error.column++;
@@ -1747,16 +1778,22 @@ lonejson__parser_feed_bytes(lonejson_parser *parser, const unsigned char *bytes,
             continue;
           }
           if (bytes[i] == '-' || lonejson__is_digit(bytes[i])) {
-            status = lonejson__begin_number_lex(parser, bytes[i]);
+            size_t number_used = 1u;
+            if (active->pending_field == NULL && !parser->json_stream_active &&
+                len - i >= sizeof(lonejson_uint64))
+              status = lonejson__begin_ignored_number(parser, bytes + i,
+                                                      len - i, &number_used);
+            else
+              status = lonejson__begin_number_lex(parser, bytes[i]);
             if (status != LONEJSON_STATUS_OK &&
                 status != LONEJSON_STATUS_TRUNCATED) {
               parser->failed = 1;
               if (consumed != NULL) {
-                *consumed = i + 1u;
+                *consumed = i + number_used;
               }
               return status;
             }
-            i++;
+            i += number_used;
             continue;
           }
           if (bytes[i] == 't' || bytes[i] == 'f' || bytes[i] == 'n') {
@@ -1831,16 +1868,22 @@ lonejson__parser_feed_bytes(lonejson_parser *parser, const unsigned char *bytes,
           continue;
         }
         if (bytes[i] == '-' || lonejson__is_digit(bytes[i])) {
-          status = lonejson__begin_number_lex(parser, bytes[i]);
+          size_t number_used = 1u;
+          if (active->field == NULL && !parser->json_stream_active &&
+              len - i >= sizeof(lonejson_uint64))
+            status = lonejson__begin_ignored_number(parser, bytes + i, len - i,
+                                                    &number_used);
+          else
+            status = lonejson__begin_number_lex(parser, bytes[i]);
           if (status != LONEJSON_STATUS_OK &&
               status != LONEJSON_STATUS_TRUNCATED) {
             parser->failed = 1;
             if (consumed != NULL) {
-              *consumed = i + 1u;
+              *consumed = i + number_used;
             }
             return status;
           }
-          i++;
+          i += number_used;
           continue;
         }
         if (bytes[i] == 't' || bytes[i] == 'f' || bytes[i] == 'n') {
@@ -1897,6 +1940,20 @@ lonejson__parser_feed_bytes(lonejson_parser *parser, const unsigned char *bytes,
       }
       parser->error.offset--;
       parser->error.column--;
+      if (lonejson__is_json_space(bytes[i])) {
+        do {
+          parser->error.offset++;
+          if (bytes[i] == '\n') {
+            parser->error.line++;
+            parser->error.column = 0u;
+          } else {
+            parser->error.column++;
+          }
+          i++;
+        } while (i < len && lonejson__is_json_space(bytes[i]));
+        lonejson__parser_note_workspace_usage(parser);
+        continue;
+      }
     }
 
     status = lonejson__parser_consume_char(parser, bytes[i]);

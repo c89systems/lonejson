@@ -53,6 +53,15 @@ int main(void) {
   test_oidc_validate_bearer_token_failures();
   test_m2m_credential_store_auth();
   test_m2m_signup_flow();
+  test_string_scan_boundaries();
+  test_json_whitespace_feed_boundaries();
+  test_json_whitespace_runs();
+  test_schema_key_comparison_boundaries();
+  test_ignored_number_feed_boundaries();
+  test_numeric_lifecycle_preserves_application_data();
+  test_colliding_schema_cache_entries();
+  test_empty_array_replacement_ownership();
+  test_mapped_integer_range_boundaries();
   test_parse_implicit_destination_reset();
   test_dynamic_allocation_cleanup_balance();
   test_dynamic_allocation_reset_reparse_balance();
@@ -107,6 +116,7 @@ int main(void) {
   test_stream_reuse_fixed_capacity_string_array_frees_replaced_entries();
   test_stream_reuse_releases_spooled_budget_bytes();
   test_object_stream_nonblocking_fd_would_block();
+  test_array_stream_open_error_outputs();
   test_array_stream_mapped_items_from_root_key();
   test_array_stream_raw_values_from_root_array();
   test_array_stream_open_path_and_fd_sources();
@@ -367,6 +377,7 @@ int main(void) {
   test_writer_chunked_numbers();
   test_writer_chunked_number_failures();
   test_writer_value_stream_success_and_commas();
+  test_writer_value_stream_string_chunks();
   test_writer_value_stream_method_initializers();
   test_writer_value_stream_root_scalars();
   test_writer_value_stream_failure_modes();

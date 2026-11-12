@@ -1762,9 +1762,18 @@ lonejson__writer_value_string_chunk(void *user, const char *data, size_t len,
   size_t i;
   lonejson_status status;
 
-  for (i = 0u; i < len; ++i) {
-    status = lonejson__writer_string_reader_emit_byte(
-        state->writer, (unsigned char)data[i], error);
+  i = 0u;
+  while (i < len) {
+    size_t plain = lonejson__plain_string_span_bulk(
+        (const unsigned char *)data + i, len - i, 0);
+    if (plain != 0u) {
+      status = lonejson__writer_emit(state->writer, data + i, plain, error);
+      i += plain;
+    } else {
+      status = lonejson__writer_string_reader_emit_byte(
+          state->writer, (unsigned char)data[i], error);
+      ++i;
+    }
     if (status == LONEJSON_STATUS_TRUNCATED) {
       return lonejson__writer_value_fail(
           NULL, state, error, LONEJSON_STATUS_OVERFLOW,

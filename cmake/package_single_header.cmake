@@ -61,58 +61,16 @@ endif()
 set(release_version_major "${CMAKE_MATCH_1}")
 set(release_version_minor "${CMAKE_MATCH_2}")
 set(release_version_patch "${CMAKE_MATCH_3}")
-set(dist_header_release "${single_header}")
-foreach(version_macro IN ITEMS
-    LONEJSON_VERSION_MAJOR
-    LONEJSON_VERSION_MINOR
-    LONEJSON_VERSION_PATCH
-    LJ_VERSION_MAJOR
-    LJ_VERSION_MINOR
-    LJ_VERSION_PATCH)
-  if(version_macro STREQUAL "LONEJSON_VERSION_MAJOR" OR
-     version_macro STREQUAL "LJ_VERSION_MAJOR")
-    set(version_value "${release_version_major}")
-  elseif(version_macro STREQUAL "LONEJSON_VERSION_MINOR" OR
-         version_macro STREQUAL "LJ_VERSION_MINOR")
-    set(version_value "${release_version_minor}")
-  else()
-    set(version_value "${release_version_patch}")
-  endif()
-  string(REGEX REPLACE
-    "#define[ \t]+${version_macro}[ \t]+[^ \t\r\n]+"
-    "#define ${version_macro} ${version_value}"
-    dist_header_release
-    "${dist_header_release}")
-endforeach()
-
 get_filename_component(build_dir "${LONEJSON_SINGLE_HEADER_BUILD}" DIRECTORY)
 get_filename_component(build_alias_dir "${LONEJSON_SINGLE_HEADER_BUILD_ALIAS}" DIRECTORY)
 get_filename_component(dist_dir "${LONEJSON_SINGLE_HEADER_DIST_GZ}" DIRECTORY)
 set(dist_header "${build_dir}/lonejson-release.h")
 set(build_tmp "${build_dir}/lonejson_single_header.h.tmp")
-set(build_alias_tmp "${build_alias_dir}/lonejson.h.tmp")
-set(dist_header_tmp "${build_dir}/lonejson-release.h.tmp")
 file(MAKE_DIRECTORY "${build_dir}" "${build_alias_dir}" "${dist_dir}")
 file(WRITE "${build_tmp}" "${single_header}")
-file(WRITE "${build_alias_tmp}" "${single_header}")
-file(WRITE "${dist_header_tmp}" "${dist_header_release}")
 
-if(NOT DEFINED LONEJSON_CLANG_FORMAT_BIN OR LONEJSON_CLANG_FORMAT_BIN STREQUAL "")
-  find_program(LONEJSON_CLANG_FORMAT_BIN NAMES clang-format)
-endif()
-
-if(DEFINED LONEJSON_CLANG_FORMAT_BIN AND NOT LONEJSON_CLANG_FORMAT_BIN STREQUAL "")
-  execute_process(
-    COMMAND "${LONEJSON_CLANG_FORMAT_BIN}" -i
-      "${build_tmp}"
-      "${build_alias_tmp}"
-      "${dist_header_tmp}"
-    RESULT_VARIABLE clang_format_result
-  )
-  if(NOT clang_format_result EQUAL 0)
-    message(FATAL_ERROR "failed to clang-format single-header artifact")
-  endif()
-endif()
+# Maintained fragments are formatted before committing. Packaging concatenates
+# them without formatting the complete implementation again for every target.
 
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
@@ -124,21 +82,15 @@ if(NOT copy_build_result EQUAL 0)
 endif()
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-    "${build_alias_tmp}" "${LONEJSON_SINGLE_HEADER_BUILD_ALIAS}"
+    "${build_tmp}" "${LONEJSON_SINGLE_HEADER_BUILD_ALIAS}"
   RESULT_VARIABLE copy_alias_result
 )
 if(NOT copy_alias_result EQUAL 0)
   message(FATAL_ERROR "failed to update build alias single-header artifact")
 endif()
-execute_process(
-  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-    "${dist_header_tmp}" "${dist_header}"
-  RESULT_VARIABLE copy_dist_result
-)
-if(NOT copy_dist_result EQUAL 0)
-  message(FATAL_ERROR "failed to update dist single-header artifact")
-endif()
-file(READ "${dist_header}" dist_header_release_content)
+# The two build headers are identical. The release header differs only in six
+# one-line version definitions.
+file(READ "${build_tmp}" dist_header_release_content)
 foreach(version_macro IN ITEMS
     LONEJSON_VERSION_MAJOR
     LONEJSON_VERSION_MINOR
@@ -155,14 +107,16 @@ foreach(version_macro IN ITEMS
   else()
     set(version_value "${release_version_patch}")
   endif()
-  string(REGEX REPLACE
+  string(REGEX MATCH
     "#define[ \t]+${version_macro}[ \t]+[^ \t\r\n]+"
+    version_definition "${public_header}")
+  string(REPLACE "${version_definition}"
     "#define ${version_macro} ${version_value}"
     dist_header_release_content
     "${dist_header_release_content}")
 endforeach()
 file(WRITE "${dist_header}" "${dist_header_release_content}")
-file(REMOVE "${build_tmp}" "${build_alias_tmp}" "${dist_header_tmp}")
+file(REMOVE "${build_tmp}")
 
 find_program(LONEJSON_GZIP_BIN NAMES gzip)
 if(NOT LONEJSON_GZIP_BIN)

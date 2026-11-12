@@ -75,6 +75,7 @@ typedef struct lonejson__map_analysis {
   size_t depth;
   size_t inline_depth;
   int recursive;
+  size_t zero_prefix;
 } lonejson__map_analysis;
 
 typedef struct lonejson__map_analysis_frame {
@@ -85,7 +86,8 @@ typedef struct lonejson__map_analysis_frame {
 } lonejson__map_analysis_frame;
 
 #if defined(LONEJSON_TEST_MAP_ANALYSIS_COUNTER)
-static size_t g_lonejson_test_map_analysis_count = 0u;
+/* Match the cache's thread ownership when inspecting analysis reuse. */
+static LONEJSON__TLS size_t g_lonejson_test_map_analysis_count = 0u;
 static void lonejson__test_reset_map_analysis_count(void) {
   g_lonejson_test_map_analysis_count = 0u;
 }
@@ -194,6 +196,15 @@ lonejson__analyze_map_with_allocator(const lonejson_map *map,
       result.status = LONEJSON_STATUS_INVALID_ARGUMENT;
       break;
     }
+    /* A fully mapped, contiguous numeric prefix can be reset without walking
+     * fields. Exclude strings, ownership and presence state; preserve every
+     * unmapped byte, including trailing application data. */
+    if ((frame->index == 0u || frame->result.zero_prefix != 0u) &&
+        kind_accepts_presence && !has_presence &&
+        field->struct_offset == frame->result.zero_prefix)
+      frame->result.zero_prefix += size;
+    else
+      frame->result.zero_prefix = 0u;
     if ((field->kind == LONEJSON_FIELD_KIND_OBJECT ||
          field->kind == LONEJSON_FIELD_KIND_OBJECT_ARRAY) &&
         field->submap != NULL) {
@@ -519,12 +530,27 @@ lonejson__field_key_matches(const lonejson_field *field, const char *key,
   if (key_len == 0u) {
     return 1;
   }
+  /* Compare short keys with bounded, unaligned loads. The two words cover
+   * the key, overlapping when it is shorter than two complete words. */
+  if (key_len >= sizeof(unsigned int) && key_len <= 2u * sizeof(unsigned int)) {
+    unsigned int a, b;
+    memcpy(&a, field->json_key, sizeof(a));
+    memcpy(&b, key, sizeof(b));
+    if (a != b)
+      return 0;
+    memcpy(&a, field->json_key + key_len - sizeof(a), sizeof(a));
+    memcpy(&b, key + key_len - sizeof(b), sizeof(b));
+    return a == b;
+  }
   if (field->json_key_first != (unsigned char)key[0] ||
       field->json_key_last != (unsigned char)key[key_len - 1u]) {
     return 0;
   }
   if (key_len <= 2u) {
     return 1;
+  }
+  if (key_len == 3u) {
+    return field->json_key[1] == key[1];
   }
   return memcmp(field->json_key + 1u, key + 1u, key_len - 2u) == 0;
 }
@@ -538,12 +564,27 @@ lonejson__field_index(const lonejson_map *map, const lonejson_field *field) {
   return (size_t)(field - map->fields);
 }
 
-static const lonejson_field *lonejson__find_field(const lonejson_map *map,
-                                                  lonejson_frame *frame,
-                                                  const char *key,
-                                                  size_t key_len) {
+static LONEJSON__NOINLINE const lonejson_field *
+lonejson__find_field_slow(const lonejson_map *map, lonejson_frame *frame,
+                          const char *key, size_t key_len) {
   size_t i;
+  for (i = 0; i < map->field_count; ++i) {
+    const lonejson_field *field = &map->fields[i];
+    if (lonejson__field_key_matches(field, key, key_len)) {
+      if (frame != NULL) {
+        frame->next_field_hint = i + 1u;
+      }
+      return field;
+    }
+  }
+  return NULL;
+}
 
+/* The existing next-field hint avoids a search for ordered keys. Keep that
+ * check inline without pulling the fallback loop into each parser path. */
+static LONEJSON__INLINE const lonejson_field *
+lonejson__find_field(const lonejson_map *map, lonejson_frame *frame,
+                     const char *key, size_t key_len) {
   if (map == NULL) {
     return NULL;
   }
@@ -555,16 +596,7 @@ static const lonejson_field *lonejson__find_field(const lonejson_map *map,
     frame->next_field_hint++;
     return field;
   }
-  for (i = 0; i < map->field_count; ++i) {
-    const lonejson_field *field = &map->fields[i];
-    if (lonejson__field_key_matches(field, key, key_len)) {
-      if (frame != NULL) {
-        frame->next_field_hint = i + 1u;
-      }
-      return field;
-    }
-  }
-  return NULL;
+  return lonejson__find_field_slow(map, frame, key, key_len);
 }
 
 static LONEJSON__INLINE void *lonejson__field_ptr(void *base,
@@ -1890,11 +1922,11 @@ static int lonejson__record_reserve(lonejson__record_workspace *workspace,
   return 1;
 }
 
-static void lonejson__record_apply_field(int operation, lonejson_parser *parser,
-                                         const lonejson_field *field,
-                                         void *value,
-                                         const lonejson_allocator *allocator,
-                                         const lonejson_runtime *runtime) {
+static LONEJSON__INLINE void
+lonejson__record_apply_field(int operation, lonejson_parser *parser,
+                             const lonejson_field *field, void *value,
+                             const lonejson_allocator *allocator,
+                             const lonejson_runtime *runtime) {
   void *ptr = lonejson__field_ptr(value, field);
   switch (operation) {
   case LONEJSON__RECORD_INIT:
@@ -1924,7 +1956,7 @@ static void lonejson__record_apply_field(int operation, lonejson_parser *parser,
     lonejson__field_set_presence(value, field, 0);
 }
 
-static lonejson_status lonejson__record_walk(
+static LONEJSON__INLINE lonejson_status lonejson__record_walk(
     lonejson__record_workspace *workspace, const lonejson_map *map, void *value,
     int operation, lonejson_parser *parser, const lonejson_allocator *allocator,
     const lonejson_runtime *runtime, int measure) {
@@ -1940,7 +1972,9 @@ static lonejson_status lonejson__record_walk(
     const lonejson_field *field;
     void *ptr;
     void *child_value = NULL;
-    int child_operation = frame->operation;
+    int active_operation =
+        operation == LONEJSON__RECORD_RESET ? frame->operation : operation;
+    int child_operation = active_operation;
     int zero_on_exit = 0;
     if (frame->index == frame->map->field_count) {
       if (!measure && frame->zero_on_exit)
@@ -1952,13 +1986,13 @@ static lonejson_status lonejson__record_walk(
     ptr = lonejson__field_ptr(frame->value, field);
     if (field->kind == LONEJSON_FIELD_KIND_OBJECT && field->submap != NULL) {
       child_value = ptr;
-      zero_on_exit = frame->operation == LONEJSON__RECORD_CLEANUP;
+      zero_on_exit = active_operation == LONEJSON__RECORD_CLEANUP;
       ++frame->index;
     } else if (field->kind == LONEJSON_FIELD_KIND_OBJECT_ARRAY &&
                field->submap != NULL &&
-               frame->operation != LONEJSON__RECORD_INIT) {
+               active_operation != LONEJSON__RECORD_INIT) {
       lonejson_object_array *array = (lonejson_object_array *)ptr;
-      if (frame->operation == LONEJSON__RECORD_RESET &&
+      if (active_operation == LONEJSON__RECORD_RESET &&
           lonejson__is_exact_fixed_capacity(array->flags) &&
           !lonejson__map_may_allocate(field->submap))
         frame->array_index = array->count;
@@ -1969,7 +2003,7 @@ static lonejson_status lonejson__record_walk(
         child_value = (unsigned char *)array->items +
                       frame->array_index * field->elem_size;
         ++frame->array_index;
-        if (frame->operation == LONEJSON__RECORD_RESET)
+        if (active_operation == LONEJSON__RECORD_RESET)
           child_operation = LONEJSON__RECORD_CLEANUP;
       }
     }
@@ -2000,7 +2034,7 @@ static lonejson_status lonejson__record_walk(
       continue;
     }
     if (!measure) {
-      lonejson__record_apply_field(frame->operation, parser, field,
+      lonejson__record_apply_field(active_operation, parser, field,
                                    frame->value, allocator, runtime);
       if (parser != NULL && parser->failed)
         return parser->error.code;
@@ -2011,11 +2045,10 @@ static lonejson_status lonejson__record_walk(
   return LONEJSON_STATUS_OK;
 }
 
-static lonejson_status lonejson__record_run(const lonejson_map *map,
-                                            void *value, int operation,
-                                            lonejson_parser *parser,
-                                            const lonejson_allocator *allocator,
-                                            const lonejson_runtime *runtime) {
+static LONEJSON__INLINE lonejson_status lonejson__record_run(
+    const lonejson_map *map, void *value, int operation,
+    lonejson_parser *parser, const lonejson_allocator *allocator,
+    const lonejson_runtime *runtime) {
   lonejson__record_workspace workspace;
   lonejson__map_analysis analysis;
   lonejson_status status;
@@ -2025,6 +2058,11 @@ static lonejson_status lonejson__record_run(const lonejson_map *map,
   analysis = lonejson__map_analysis_cached_with_allocator(map, allocator);
   if (!analysis.valid)
     return analysis.status;
+  if (analysis.zero_prefix != 0u && (operation == LONEJSON__RECORD_INIT ||
+                                     operation == LONEJSON__RECORD_RESET)) {
+    memset(value, 0, analysis.zero_prefix);
+    return LONEJSON_STATUS_OK;
+  }
   workspace.frames = workspace.local;
   workspace.capacity = sizeof(workspace.local) / sizeof(workspace.local[0]);
   depth = operation == LONEJSON__RECORD_INIT ? analysis.inline_depth
@@ -2105,6 +2143,14 @@ static lonejson_status lonejson__cleanup_field_run(lonejson_parser *parser,
 static void lonejson__cleanup_value_parse(lonejson_parser *parser,
                                           const lonejson_field *field,
                                           void *ptr) {
+  /* The containing parser already validated the schema. Leaf values and
+   * empty object arrays have no child records to traverse. */
+  if (field->kind != LONEJSON_FIELD_KIND_OBJECT &&
+      (field->kind != LONEJSON_FIELD_KIND_OBJECT_ARRAY ||
+       ((lonejson_object_array *)ptr)->count == 0u)) {
+    lonejson__cleanup_leaf_parse(parser, field, ptr);
+    return;
+  }
   lonejson__record_parse_status(
       parser, lonejson__cleanup_field_run(parser, field, ptr));
 }

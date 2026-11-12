@@ -1,3 +1,175 @@
+static lonejson_read_result
+test_array_stream_open_eof_reader(void *user, unsigned char *buffer,
+                                  size_t capacity) {
+  lonejson_read_result result;
+  (void)user;
+  (void)buffer;
+  (void)capacity;
+  memset(&result, 0, sizeof(result));
+  result.eof = 1;
+  return result;
+}
+
+static lonejson_array_stream *
+test_array_stream_open_error_source(lonejson *runtime, int receiver, int source,
+                                    int invalid_source, const char *array_path,
+                                    const char *file_path, FILE *file,
+                                    lonejson_error *error) {
+  switch (source) {
+  case 0:
+    return (receiver ? runtime->array_stream_open_reader
+                     : lonejson_array_stream_open_reader)(
+        runtime, array_path,
+        invalid_source ? NULL : test_array_stream_open_eof_reader, NULL, error);
+  case 1:
+    return (receiver ? runtime->array_stream_open_filep
+                     : lonejson_array_stream_open_filep)(
+        runtime, array_path, invalid_source ? NULL : file, error);
+  case 2:
+    return (receiver ? runtime->array_stream_open_path
+                     : lonejson_array_stream_open_path)(
+        runtime, array_path, invalid_source ? NULL : file_path, error);
+  case 3:
+    return (receiver ? runtime->array_stream_open_fd
+                     : lonejson_array_stream_open_fd)(
+        runtime, array_path, invalid_source ? -1 : fileno(file), error);
+  default:
+    return (receiver
+                ? runtime->array_stream_open_push
+                : lonejson_array_stream_open_push)(runtime, array_path, error);
+  }
+}
+
+static void test_array_stream_check_open_error(const lonejson_error *error,
+                                               lonejson_status status,
+                                               int system_errno) {
+  EXPECT(error->code == status);
+  EXPECT(error->offset == 0u);
+  EXPECT(error->line == (status == LONEJSON_STATUS_IO_ERROR ? 1u : 0u));
+  EXPECT(error->column == 0u);
+  EXPECT(error->system_errno == system_errno);
+  EXPECT(error->truncated == 0);
+  EXPECT((error->message[0] == '\0') == (status == LONEJSON_STATUS_OK));
+  EXPECT(memchr(error->message, '\0', sizeof(error->message)) != NULL);
+}
+
+static void test_array_stream_open_error_outputs(void) {
+  char path[] = LONEJSON_SOURCE_DIR "/build/test-tmp/array-open-error-XXXXXX";
+  test_fail_after_allocator_state allocator;
+  lonejson_config config = lonejson_default_config();
+  lonejson *runtime;
+  lonejson_array_stream *stream;
+  FILE *file;
+  int fd;
+  int source;
+  int receiver;
+  int poisoned;
+  size_t fail_after;
+  int opened;
+
+  test_fail_after_allocator_init(&allocator, SIZE_MAX);
+  config.allocator = &allocator.allocator;
+  runtime = lonejson_new(&config, NULL);
+  EXPECT(runtime != NULL);
+  if (runtime == NULL) {
+    return;
+  }
+  fd = write_temp_text_file(path, "[]");
+  EXPECT(fd >= 0);
+  file = fd < 0 ? NULL : fdopen(fd, "rb");
+  EXPECT(file != NULL);
+  if (file == NULL) {
+    if (fd >= 0) {
+      close(fd);
+      unlink(path);
+    }
+    lonejson_free(runtime);
+    return;
+  }
+  for (source = 0; source < 5; ++source) {
+    for (receiver = 0; receiver < 2; ++receiver) {
+      for (poisoned = 0; poisoned < 2; ++poisoned) {
+        opened = 0;
+        for (fail_after = 0u; fail_after < 16u; ++fail_after) {
+          /* Fresh heap storage remains undefined to Memcheck on every call. */
+          lonejson_error *error = (lonejson_error *)malloc(sizeof(*error));
+          EXPECT(error != NULL);
+          if (error == NULL) {
+            break;
+          }
+          if (poisoned) {
+            memset(error, 0x5a, sizeof(*error));
+          }
+          allocator.calls = 0u;
+          allocator.successful_calls_before_failure = fail_after;
+          stream = test_array_stream_open_error_source(
+              runtime, receiver, source, 0, "items", path, file, error);
+          test_array_stream_check_open_error(
+              error,
+              stream == NULL ? LONEJSON_STATUS_ALLOCATION_FAILED
+                             : LONEJSON_STATUS_OK,
+              0);
+          opened = stream != NULL;
+          lonejson_array_stream_close(stream);
+          free(error);
+          if (opened) {
+            break;
+          }
+        }
+        EXPECT(opened);
+      }
+      allocator.calls = 0u;
+      allocator.successful_calls_before_failure = 0u;
+      stream = test_array_stream_open_error_source(runtime, receiver, source, 0,
+                                                   "items", path, file, NULL);
+      EXPECT(stream == NULL);
+      lonejson_array_stream_close(stream);
+      allocator.successful_calls_before_failure = SIZE_MAX;
+      {
+        lonejson_error error;
+        memset(&error, 0x5a, sizeof(error));
+        stream = test_array_stream_open_error_source(
+            runtime, receiver, source, 0, "items.invalid", path, file, &error);
+        EXPECT(stream == NULL);
+        test_array_stream_check_open_error(&error,
+                                           LONEJSON_STATUS_INVALID_ARGUMENT, 0);
+        lonejson_array_stream_close(stream);
+        if (source != 4) {
+          memset(&error, 0x5a, sizeof(error));
+          stream = test_array_stream_open_error_source(
+              runtime, receiver, source, 1, "items", path, file, &error);
+          EXPECT(stream == NULL);
+          test_array_stream_check_open_error(
+              &error, LONEJSON_STATUS_INVALID_ARGUMENT, 0);
+          lonejson_array_stream_close(stream);
+        }
+        if (!receiver) {
+          memset(&error, 0x5a, sizeof(error));
+          stream = test_array_stream_open_error_source(
+              NULL, 0, source, 0, "items", path, file, &error);
+          EXPECT(stream == NULL);
+          test_array_stream_check_open_error(
+              &error, LONEJSON_STATUS_INVALID_ARGUMENT, 0);
+          lonejson_array_stream_close(stream);
+        }
+      }
+    }
+  }
+  EXPECT(unlink(path) == 0);
+  for (receiver = 0; receiver < 2; ++receiver) {
+    lonejson_error error;
+    memset(&error, 0x5a, sizeof(error));
+    stream = test_array_stream_open_error_source(runtime, receiver, 2, 0,
+                                                 "items", path, file, &error);
+    EXPECT(stream == NULL);
+    test_array_stream_check_open_error(&error, LONEJSON_STATUS_IO_ERROR,
+                                       ENOENT);
+    lonejson_array_stream_close(stream);
+  }
+  fclose(file);
+  lonejson_free(runtime);
+}
+
 static void test_array_stream_mapped_items_from_root_key(void) {
   test_reader_state state = {
       "{\"version\":1,\"items\":[{\"id\":1,\"label\":\"one\"},"
@@ -2016,31 +2188,37 @@ static void test_array_stream_push_string_item_callback(void) {
   lonejson_error error;
   lonejson_status status;
   test_array_stream_string_seen seen;
-  size_t i;
+  size_t i, chunk;
 
-  memset(&seen, 0, sizeof(seen));
-  stream = test_array_stream_open_push("keys", NULL, &error);
-  EXPECT(stream != NULL);
-  if (stream == NULL) {
-    return;
-  }
-  for (i = 0u; i < strlen(json); ++i) {
-    status = lonejson_array_stream_push_string_items(
-        stream, json + i, 1u, test_array_stream_string_item, &seen, &error);
+  for (chunk = 1u; chunk <= 8u; ++chunk) {
+    memset(&seen, 0, sizeof(seen));
+    stream = test_array_stream_open_push("keys", NULL, &error);
+    EXPECT(stream != NULL);
+    if (stream == NULL) {
+      return;
+    }
+    for (i = 0u; i < strlen(json); i += chunk) {
+      size_t count = strlen(json) - i;
+      if (count > chunk)
+        count = chunk;
+      status = lonejson_array_stream_push_string_items(
+          stream, json + i, count, test_array_stream_string_item, &seen,
+          &error);
+      EXPECT(status == LONEJSON_STATUS_OK);
+    }
+    status = lonejson_array_stream_finish_string_items(
+        stream, test_array_stream_string_item, &seen, &error);
     EXPECT(status == LONEJSON_STATUS_OK);
+    EXPECT(seen.ends == 5u);
+    EXPECT(seen.null_items == 0u);
+    EXPECT(seen.unterminated_items == 0u);
+    EXPECT(strcmp(seen.items[0], "") == 0);
+    EXPECT(strcmp(seen.items[1], "alpha") == 0);
+    EXPECT(strcmp(seen.items[2], "") == 0);
+    EXPECT(strcmp(seen.items[3], "bravo") == 0);
+    EXPECT(strcmp(seen.items[4], "line\nkey") == 0);
+    lonejson_array_stream_close(stream);
   }
-  status = lonejson_array_stream_finish_string_items(
-      stream, test_array_stream_string_item, &seen, &error);
-  EXPECT(status == LONEJSON_STATUS_OK);
-  EXPECT(seen.ends == 5u);
-  EXPECT(seen.null_items == 0u);
-  EXPECT(seen.unterminated_items == 0u);
-  EXPECT(strcmp(seen.items[0], "") == 0);
-  EXPECT(strcmp(seen.items[1], "alpha") == 0);
-  EXPECT(strcmp(seen.items[2], "") == 0);
-  EXPECT(strcmp(seen.items[3], "bravo") == 0);
-  EXPECT(strcmp(seen.items[4], "line\nkey") == 0);
-  lonejson_array_stream_close(stream);
 
   memset(&seen, 0, sizeof(seen));
   seen.fail_after_chunks = 1u;

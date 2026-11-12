@@ -3,7 +3,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 MAKEFLAGS += --no-builtin-rules
-LONEJSON_BUILD_JOBS ?= 2
+LONEJSON_BUILD_JOBS ?= 4
 export CMAKE_BUILD_PARALLEL_LEVEL ?= $(LONEJSON_BUILD_JOBS)
 export CTEST_PARALLEL_LEVEL := 1
 
@@ -66,19 +66,10 @@ RELEASE_LUA_SOURCE_TARBALL := $(DIST_DIR)/lonejson-lua-$(RELEASE_VERSION).tar.gz
 RELEASE_LUA_SOURCE_URL := https://github.com/c89systems/lonejson/releases/download/v$(RELEASE_VERSION)/$(notdir $(RELEASE_LUA_SOURCE_TARBALL))
 RELEASE_ROCK := $(DIST_DIR)/lonejson-$(RELEASE_VERSION)-1.src.rock
 RELEASE_CHECKSUMS := $(DIST_DIR)/lonejson-$(RELEASE_VERSION)-CHECKSUMS
-PERF_CORPUS := tests/fixtures/vendor/json_test_suite/test_parsing
 PERF_HOST_ID ?= $(shell ./scripts/bench_host_id.sh 2>/dev/null || printf unknown)
 PERF_HOST_DIR := $(CURDIR)/perflogs/hosts/$(PERF_HOST_ID)
-PERF_LATEST := $(PERF_HOST_DIR)/latest.json
-PERF_HISTORY := $(PERF_HOST_DIR)/history.jsonl
 PERF_BASELINE := $(PERF_HOST_DIR)/baseline.json
-PERF_ARCHIVE_DIR := $(PERF_HOST_DIR)/runs
-LUA_PERF_LATEST := $(PERF_HOST_DIR)/lua/latest.json
-LUA_PERF_HISTORY := $(PERF_HOST_DIR)/lua/history.jsonl
 LUA_PERF_BASELINE := $(PERF_HOST_DIR)/lua/baseline.json
-LUA_PERF_ARCHIVE_DIR := $(PERF_HOST_DIR)/lua/runs
-PERF_ITERATIONS ?= 40
-LUA_PERF_ITERATIONS ?= 30
 FUZZ_TIME ?= 30
 FUZZ_LONG_TIME ?= 300
 LUA_ROCK_TREE := build/luarocks
@@ -126,7 +117,7 @@ SANITIZER_CTEST_EXCLUDE := ^lonejson_lua_(target|fuzz|interop|target_runner_argu
 SLICE_BUILD_TARGETS := lonejson_tests lonejson_value_visitor_stream_tests lonejson_map_cache_no_tls_tests lonejson_short_names_tests lonejson_short_names_disabled_tests lonejson_static_link_tests lonejson_shared_link_tests
 SLICE_CTEST_INCLUDE := ^lonejson_(tests|value_visitor_stream_tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|single_header_version_tests|single_header_release_version_tests|library_exports_tests)$$
 
-.PHONY: \
+.PHONY: benchmark-prepare \
 	help \
 	finalize-slice \
 	abi-check \
@@ -150,6 +141,7 @@ SLICE_CTEST_INCLUDE := ^lonejson_(tests|value_visitor_stream_tests|map_cache_no_
 	verify-release-archives \
 	verify-release-privacy \
 	lifecycle-version-contract \
+	release-baseline-check \
 	prerelease \
 	prerelease-live \
 	prerelease-hardening \
@@ -250,9 +242,10 @@ help:
 		'make verify-release-archives Alias for make package-verify.' \
 		'make verify-release-privacy Alias for make package-verify.' \
 		'make lifecycle-version-contract Verify clean committed checkout and exact lightweight release tag without changing state.' \
+		'make release-baseline-check Check that both host benchmark baselines exist and are recorded in HEAD.' \
 		'make prerelease             Run the deterministic release pipeline without cleaning generated state first.' \
 		'make prerelease-live        Report that no live external-provider release checks are defined.' \
-		'make prerelease-hardening   Alias for prerelease; native hardening and benchmark checks are already included.' \
+		'make prerelease-hardening   Run prerelease, then the full C and Lua benchmark gates.' \
 		'make release-pipeline       Internal shared release proof used by prerelease and release.' \
 		'make release-matrix         Build host release tests, then package, checksum, and verify every release target without cleaning first.' \
 		'make release                Clean generated state, then run the same pipeline as prerelease.' \
@@ -266,16 +259,16 @@ help:
 		'make lua-bench-prerequisite Prepare the platform-native Lua benchmark runtime.' \
 		'make lua-test               Build the Lua module and run the Lua integration test.' \
 		'make lua-fuzz               Build the Lua module and run the Lua randomized binding fuzz smoke.' \
-		'make lua-bench              Run the standalone Lua benchmark harness, compare it, and enforce the Lua benchmark gate.' \
-		'make lua-bench-freeze-baseline Run fresh C and Lua measurements, then freeze the Lua baseline.' \
-		'make lua-bench-compare      Run a fresh Lua benchmark, then compare against the committed Lua baseline.' \
-		'make lua-bench-gate         Run a fresh Lua benchmark, then enforce the Lua benchmark gate against the committed Lua baseline.' \
-		'make bench                  Build and run the host benchmark against the vendored JSON corpus, then compare/gate against the working baseline file if present.' \
-		'make bench-check            Run C and Lua benchmark gates using temporary result files, leaving perflogs/ clean.' \
-		'make bench-freeze-baseline  Run a fresh C measurement, then freeze it as the current benchmark baseline.' \
-		'make bench-compare          Run a fresh C benchmark, then compare against the committed C baseline.' \
+		'make lua-bench              Run the complete C/Lua benchmark within five minutes total.' \
+		'make lua-bench-freeze-baseline Measure and freeze the C/Lua baseline pair after precision checks.' \
+		'make lua-bench-compare      Run the complete C/Lua benchmark comparison.' \
+		'make lua-bench-gate         Run the complete C/Lua benchmark gates.' \
+		'make bench                  Measure all C/Lua workloads within five minutes total.' \
+		'make bench-check            Run complete C/Lua gates within five minutes, retaining raw results.' \
+		'make bench-freeze-baseline  Measure and freeze the C/Lua baseline pair after precision checks.' \
+		'make bench-compare          Run the complete C/Lua benchmark comparison.' \
 		'make bench-baseline-history Compare frozen C/Lua benchmark baselines across git history.' \
-		'make bench-gate             Run a fresh C benchmark, then enforce the C benchmark gate against the committed C baseline.' \
+		'make bench-gate             Run the complete C/Lua benchmark gates.' \
 		'make test                   Build debug artifacts, run CTest, then Lua tests; this is the debug lifecycle gate.' \
 		'make test-debug             Alias for make test.' \
 		'make test-host              Build and run the host-native test preset.' \
@@ -342,7 +335,6 @@ finalize-slice:
 	ctest --no-tests=error --preset $(DEBUG_PRESET) --output-on-failure -R '$(SLICE_CTEST_INCLUDE)'
 	$(MAKE) abi-check
 	$(MAKE) lua-test
-	$(MAKE) format-check
 
 abi-check: toolchains-host
 	cmake --preset $(DEBUG_PRESET) $(LONEJSON_CMAKE_RELEASE_ARGS)
@@ -435,12 +427,23 @@ verify-release-privacy: package-verify
 lifecycle-version-contract:
 	bash ./scripts/check_release_identity.sh
 
+release-baseline-check:
+	@for baseline in "$(PERF_BASELINE)" "$(LUA_PERF_BASELINE)"; do \
+		test -f "$$baseline" || { printf 'missing frozen release benchmark baseline: %s\n' "$$baseline" >&2; exit 1; }; \
+		tracked_path="$$(git ls-files --full-name --error-unmatch -- "$$baseline" 2>/dev/null)" && \
+			git cat-file -e "HEAD:$$tracked_path" 2>/dev/null || \
+			{ printf 'release benchmark baseline must be recorded in HEAD: %s\n' "$$baseline" >&2; exit 1; }; \
+	done
+	@cmake "-DPOLICY_HEADER=$(CURDIR)/bench/lonejson_measure.h" "-DC_BASELINE=$(PERF_BASELINE)" \
+		"-DLUA_BASELINE=$(LUA_PERF_BASELINE)" -P "$(CURDIR)/cmake/check_benchmark_baselines.cmake"
+
 prerelease: release-pipeline
 
 prerelease-live:
 	@printf '%s\n' 'No live prerelease checks are defined; use make prerelease for local proof.' >&2; exit 1
 
 prerelease-hardening: prerelease
+	+$(TIME_STEP) hardening/bench-check $(MAKE) bench-check
 
 release-pipeline:
 	+$(TIME_STEP) prerelease/format $(MAKE) format-check
@@ -450,7 +453,6 @@ release-pipeline:
 	+$(TIME_STEP) prerelease/valgrind $(MAKE) valgrind
 	+$(TIME_STEP) prerelease/test-e2e $(MAKE) test-e2e
 	+$(TIME_STEP) prerelease/fuzz-smoke $(MAKE) fuzz-smoke
-	+$(TIME_STEP) prerelease/bench-check $(MAKE) bench-check
 	# The matrix owns host release and cross-target tests, once per configuration.
 	+$(TIME_STEP) prerelease/release-matrix $(MAKE) release-matrix
 
@@ -459,6 +461,7 @@ release-matrix:
 
 release:
 	+$(TIME_STEP) release/version-contract $(MAKE) lifecycle-version-contract
+	+$(TIME_STEP) release/baselines $(MAKE) release-baseline-check
 	+$(TIME_STEP) release/clean $(MAKE) clean
 	+$(TIME_STEP) release/pipeline $(MAKE) release-pipeline
 	+$(TIME_STEP) release/source-smoke $(MAKE) package-source-smoke
@@ -468,71 +471,26 @@ release:
 print-release-version:
 	@printf '%s\n' "$(RELEASE_VERSION)"
 
-bench: toolchains-host
-	@cmake --preset $(HOST_PRESET) -D LONEJSON_BUILD_BENCHMARKS=ON $(LONEJSON_CMAKE_RELEASE_ARGS) && \
-	cmake --build --preset $(HOST_PRESET) --target lonejson_bench && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./build/$(HOST_PRESET)/lonejson_bench run "$(PERF_CORPUS)" "$(PERF_LATEST)" "$(PERF_HISTORY)" "$(PERF_ARCHIVE_DIR)" "$(PERF_ITERATIONS)" && \
-	if [ -f "$(PERF_BASELINE)" ]; then \
-		./build/$(HOST_PRESET)/lonejson_bench compare "$(PERF_BASELINE)" "$(PERF_LATEST)" && \
-		./build/$(HOST_PRESET)/lonejson_bench gate "$(PERF_BASELINE)" "$(PERF_LATEST)"; \
-	fi
+# Preparation also runs inside the benchmark command's total deadline.
+benchmark-prepare: toolchains-host
+	cmake --preset $(HOST_PRESET) -D LONEJSON_BUILD_BENCHMARKS=ON $(LONEJSON_CMAKE_RELEASE_ARGS)
+	cmake --build --preset $(HOST_PRESET) --target lonejson_bench
+	$(MAKE) lua-bench-prerequisite
 
-bench-check: toolchains-host
-ifeq ($(and $(wildcard $(PERF_BASELINE)),$(wildcard $(LUA_PERF_BASELINE))),)
-	@if [ ! -f "$(PERF_BASELINE)" ] || [ ! -f "$(LUA_PERF_BASELINE)" ]; then \
-		printf '%s\n' "bench-check skipped: missing frozen benchmark baseline for host $(PERF_HOST_ID)" >&2; \
-		printf '%s\n' "  C baseline: $(PERF_BASELINE)" >&2; \
-		printf '%s\n' "  Lua baseline: $(LUA_PERF_BASELINE)" >&2; \
-		printf '%s\n' "run 'make bench-freeze-baseline lua-bench-freeze-baseline' on this host to create one" >&2; \
-		exit 0; \
-	fi
-else
-	@$(MAKE) lua-bench-prerequisite
-	@mkdir -p "$(CURDIR)/build"; tmp_dir="$$(mktemp -d "$(CURDIR)/build/bench-check.XXXXXX")"; \
-	trap 'rm -rf "$$tmp_dir"' EXIT; \
-	c_latest="$$tmp_dir/c-latest.json"; \
-	c_history="$$tmp_dir/c-history.jsonl"; \
-	c_runs="$$tmp_dir/c-runs"; \
-	lua_latest="$$tmp_dir/lua-latest.json"; \
-	lua_history="$$tmp_dir/lua-history.jsonl"; \
-	lua_runs="$$tmp_dir/lua-runs"; \
-	cmake --preset $(HOST_PRESET) -D LONEJSON_BUILD_BENCHMARKS=ON $(LONEJSON_CMAKE_RELEASE_ARGS) && \
-	cmake --build --preset $(HOST_PRESET) --target lonejson_bench lonejson_shared && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./build/$(HOST_PRESET)/lonejson_bench run "$(PERF_CORPUS)" "$$c_latest" "$$c_history" "$$c_runs" "$(PERF_ITERATIONS)" && \
-	if ! ./build/$(HOST_PRESET)/lonejson_bench gate "$(PERF_BASELINE)" "$$c_latest"; then \
-		./build/$(HOST_PRESET)/lonejson_bench compare "$(PERF_BASELINE)" "$$c_latest"; \
-		printf '%s\n' 'C benchmark gate failed once; rerunning only failing cases once to confirm.' >&2; \
-		$(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua confirm-c "./build/$(HOST_PRESET)/lonejson_bench" "$(PERF_BASELINE)" "$$c_latest" "$(PERF_ITERATIONS)"; \
-	fi && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" $(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua run "$$c_latest" "$$lua_latest" "$$lua_history" "$$lua_runs" "$(LUA_PERF_ITERATIONS)" && \
-	if ! $(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua gate "$(LUA_PERF_BASELINE)" "$$lua_latest"; then \
-		$(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua compare "$(LUA_PERF_BASELINE)" "$$lua_latest"; \
-		printf '%s\n' 'Lua benchmark gate failed once; rerunning only failing cases once to confirm.' >&2; \
-		$(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua confirm-lua "$$c_latest" "$(LUA_PERF_BASELINE)" "$$lua_latest" "$(LUA_PERF_ITERATIONS)"; \
-	fi
-endif
+bench:
+	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./scripts/benchmark.sh run "$(CURDIR)" "$(CURDIR)/build/benchmark"
 
-bench-freeze-baseline: toolchains-host
-	@cmake --preset $(HOST_PRESET) -D LONEJSON_BUILD_BENCHMARKS=ON $(LONEJSON_CMAKE_RELEASE_ARGS) && \
-	cmake --build --preset $(HOST_PRESET) --target lonejson_bench && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./build/$(HOST_PRESET)/lonejson_bench run "$(PERF_CORPUS)" "$(PERF_LATEST)" "$(PERF_HISTORY)" "$(PERF_ARCHIVE_DIR)" "$(PERF_ITERATIONS)" && \
-	./build/$(HOST_PRESET)/lonejson_bench freeze-baseline "$(PERF_HISTORY)" "$(PERF_BASELINE)"
+bench-check:
+	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./scripts/benchmark.sh check "$(CURDIR)" "$(CURDIR)/build/bench-check.$$(date +%s)"
 
-bench-compare: toolchains-host
-	@cmake --preset $(HOST_PRESET) -D LONEJSON_BUILD_BENCHMARKS=ON $(LONEJSON_CMAKE_RELEASE_ARGS) && \
-	cmake --build --preset $(HOST_PRESET) --target lonejson_bench && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./build/$(HOST_PRESET)/lonejson_bench run "$(PERF_CORPUS)" "$(PERF_LATEST)" "$(PERF_HISTORY)" "$(PERF_ARCHIVE_DIR)" "$(PERF_ITERATIONS)" && \
-	./build/$(HOST_PRESET)/lonejson_bench compare "$(PERF_BASELINE)" "$(PERF_LATEST)"
+bench-freeze-baseline:
+	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./scripts/benchmark.sh freeze "$(CURDIR)" "$(CURDIR)/build/benchmark"
+
+bench-compare bench-gate: bench-check
 
 bench-baseline-history:
 	@$(MAKE) --no-print-directory lua-bench-prerequisite >/dev/null
 	$(LUA_BENCH_RUN) scripts/bench_baseline_history.lua --repo "$(CURDIR)" --host-id "$(PERF_HOST_ID)"
-
-bench-gate: toolchains-host
-	@cmake --preset $(HOST_PRESET) -D LONEJSON_BUILD_BENCHMARKS=ON $(LONEJSON_CMAKE_RELEASE_ARGS) && \
-	cmake --build --preset $(HOST_PRESET) --target lonejson_bench && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./build/$(HOST_PRESET)/lonejson_bench run "$(PERF_CORPUS)" "$(PERF_LATEST)" "$(PERF_HISTORY)" "$(PERF_ARCHIVE_DIR)" "$(PERF_ITERATIONS)" && \
-	./build/$(HOST_PRESET)/lonejson_bench gate "$(PERF_BASELINE)" "$(PERF_LATEST)"
 
 ifeq ($(LONEJSON_HOST_OS):$(shell uname -m),Linux:x86_64)
 test test-host test-host-curl: toolchains-aflpp
@@ -627,30 +585,10 @@ endif
 
 lua-bench-prerequisite: $(LUA_BENCH_PREPARE)
 
-lua-bench:
-	@$(MAKE) lua-bench-prerequisite
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" $(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua run "$(PERF_LATEST)" "$(LUA_PERF_LATEST)" "$(LUA_PERF_HISTORY)" "$(LUA_PERF_ARCHIVE_DIR)" "$(LUA_PERF_ITERATIONS)" && \
-	if [ -f "$(LUA_PERF_BASELINE)" ]; then \
-		$(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua compare "$(LUA_PERF_BASELINE)" "$(LUA_PERF_LATEST)" && \
-		$(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua gate "$(LUA_PERF_BASELINE)" "$(LUA_PERF_LATEST)"; \
-	fi
-
-lua-bench-freeze-baseline: lua-bench-prerequisite
-	cmake --preset $(HOST_PRESET) -D LONEJSON_BUILD_BENCHMARKS=ON $(LONEJSON_CMAKE_RELEASE_ARGS) && \
-	cmake --build --preset $(HOST_PRESET) --target lonejson_bench && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" ./build/$(HOST_PRESET)/lonejson_bench run "$(PERF_CORPUS)" "$(PERF_LATEST)" "$(PERF_HISTORY)" "$(PERF_ARCHIVE_DIR)" "$(PERF_ITERATIONS)" && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" $(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua run "$(PERF_LATEST)" "$(LUA_PERF_LATEST)" "$(LUA_PERF_HISTORY)" "$(LUA_PERF_ARCHIVE_DIR)" "$(LUA_PERF_ITERATIONS)" && \
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" $(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua freeze-baseline "$(LUA_PERF_HISTORY)" "$(LUA_PERF_BASELINE)"
-
-lua-bench-compare:
-	@$(MAKE) lua-bench-prerequisite
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" $(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua run "$(PERF_LATEST)" "$(LUA_PERF_LATEST)" "$(LUA_PERF_HISTORY)" "$(LUA_PERF_ARCHIVE_DIR)" "$(LUA_PERF_ITERATIONS)" && \
-	$(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua compare "$(LUA_PERF_BASELINE)" "$(LUA_PERF_LATEST)"
-
-lua-bench-gate:
-	@$(MAKE) lua-bench-prerequisite
-	LONEJSON_BENCH_HOST_ID="$(PERF_HOST_ID)" $(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua run "$(PERF_LATEST)" "$(LUA_PERF_LATEST)" "$(LUA_PERF_HISTORY)" "$(LUA_PERF_ARCHIVE_DIR)" "$(LUA_PERF_ITERATIONS)" && \
-	$(LUA_BENCH_RUN) bench/lonejson_lua_bench.lua gate "$(LUA_PERF_BASELINE)" "$(LUA_PERF_LATEST)"
+# C and Lua always share one invocation, one policy and one total deadline.
+lua-bench: bench
+lua-bench-freeze-baseline: bench-freeze-baseline
+lua-bench-compare lua-bench-gate: bench-check
 
 asan: toolchains-host
 	cmake --preset $(ASAN_PRESET) $(LONEJSON_CMAKE_RELEASE_ARGS)
@@ -676,8 +614,8 @@ tsan:
 valgrind: deps-host
 	@command -v valgrind >/dev/null 2>&1 || { printf '%s\n' 'Valgrind is required for the native memory-check gate' >&2; exit 1; }
 	bundle_root="$$(./scripts/detect_cpkt_bundle.sh)" && cmake --preset $(VALGRIND_PRESET) -D LONEJSON_CPKT_ROOT="$$bundle_root" $(LONEJSON_CMAKE_RELEASE_ARGS)
-	cmake --build --preset $(VALGRIND_PRESET) --target lonejson_tests lonejson_curl_rewind_tests lonejson_lua_target_runner
-	cd build/$(VALGRIND_PRESET) && ctest --no-tests=error -j 1 -T MemCheck --overwrite "MemoryCheckCommandOptions=--leak-check=full --track-origins=yes --keep-debuginfo=yes --num-callers=30 --error-exitcode=86 --quiet" -R '^lonejson_(tests|curl_rewind_tests|lua_target_tests)$$' --output-on-failure
+	cmake --build --preset $(VALGRIND_PRESET) --target lonejson_tests lonejson_curl_rewind_tests lonejson_lua_target_runner lonejson_bench
+	cd build/$(VALGRIND_PRESET) && ctest --no-tests=error -j 1 -T MemCheck --overwrite "MemoryCheckCommandOptions=--leak-check=full --track-origins=yes --keep-debuginfo=yes --num-callers=30 --error-exitcode=86 --quiet" -R '^lonejson_(tests|curl_rewind_tests|lua_target_tests|bench_ownership_.*_tests)$$' --output-on-failure
 
 fuzz: deps-host toolchains-aflpp
 	bundle_root="$$(./scripts/detect_cpkt_bundle.sh)" && cmake --preset $(FUZZ_PRESET) -D LONEJSON_CPKT_ROOT="$$bundle_root" -D LONEJSON_FUZZ_SECONDS="$(FUZZ_TIME)" $(LONEJSON_CMAKE_RELEASE_ARGS)

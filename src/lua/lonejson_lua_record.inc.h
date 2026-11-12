@@ -480,8 +480,7 @@ ljlua_compile_path(lua_State *L, ljlua_schema *schema, const char *path) {
   compiled->steps =
       (ljlua_path_step *)calloc(capacity, sizeof(compiled->steps[0]));
   if (compiled->steps == NULL) {
-    free(compiled->path);
-    free(compiled);
+    ljlua_compiled_path_destroy(compiled);
     luaL_error(L, "failed to allocate record path steps");
   }
 
@@ -494,16 +493,19 @@ ljlua_compile_path(lua_State *L, ljlua_schema *schema, const char *path) {
     seg_len = 0u;
     while (*cursor != '\0' && *cursor != '.' && *cursor != '[') {
       if (seg_len + 1u >= sizeof(segment)) {
+        ljlua_compiled_path_destroy(compiled);
         luaL_error(L, "path segment too long");
       }
       segment[seg_len++] = *cursor++;
     }
     if (seg_len == 0u) {
+      ljlua_compiled_path_destroy(compiled);
       luaL_error(L, "malformed record path '%s'", path);
     }
     segment[seg_len] = '\0';
     meta = ljlua_find_meta(current_schema, segment);
     if (meta == NULL) {
+      ljlua_compiled_path_destroy(compiled);
       luaL_error(L, "unknown field '%s' in path '%s'", segment, path);
     }
     index = 0u;
@@ -514,6 +516,7 @@ ljlua_compile_path(lua_State *L, ljlua_schema *schema, const char *path) {
         ++cursor;
       }
       if (*cursor != ']') {
+        ljlua_compiled_path_destroy(compiled);
         luaL_error(L, "malformed array index in path '%s'", path);
       }
       ++cursor;
@@ -524,6 +527,7 @@ ljlua_compile_path(lua_State *L, ljlua_schema *schema, const char *path) {
       grown = (ljlua_path_step *)realloc(compiled->steps,
                                          capacity * sizeof(compiled->steps[0]));
       if (grown == NULL) {
+        ljlua_compiled_path_destroy(compiled);
         luaL_error(L, "failed to grow record path cache");
       }
       compiled->steps = grown;
@@ -535,10 +539,12 @@ ljlua_compile_path(lua_State *L, ljlua_schema *schema, const char *path) {
     if (*cursor == '.') {
       if (index != 0u) {
         if (meta->lua_kind != LJLUA_FIELD_OBJECT_ARRAY) {
+          ljlua_compiled_path_destroy(compiled);
           luaL_error(L, "field '%s' is not an object array in path '%s'",
                      segment, path);
         }
       } else if (meta->lua_kind != LJLUA_FIELD_OBJECT) {
+        ljlua_compiled_path_destroy(compiled);
         luaL_error(L, "field '%s' is not an object in path '%s'", segment,
                    path);
       }
@@ -547,6 +553,7 @@ ljlua_compile_path(lua_State *L, ljlua_schema *schema, const char *path) {
       continue;
     }
     if (*cursor != '\0') {
+      ljlua_compiled_path_destroy(compiled);
       luaL_error(L, "malformed record path '%s'", path);
     }
     if (index != 0u && meta->lua_kind != LJLUA_FIELD_OBJECT_ARRAY &&
@@ -555,6 +562,7 @@ ljlua_compile_path(lua_State *L, ljlua_schema *schema, const char *path) {
         meta->lua_kind != LJLUA_FIELD_U64_ARRAY &&
         meta->lua_kind != LJLUA_FIELD_F64_ARRAY &&
         meta->lua_kind != LJLUA_FIELD_BOOL_ARRAY) {
+      ljlua_compiled_path_destroy(compiled);
       luaL_error(L, "field '%s' is not an array in path '%s'", segment, path);
     }
   }

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -32,6 +33,11 @@ static int guard_faults(void *base) {
   child = fork();
   if (child == 0) {
     struct rlimit no_core;
+    /* A piped core collector ignores RLIMIT_CORE and delays this expected
+     * fault. Keep signal verification, without invoking the host collector. */
+    if (prctl(PR_SET_DUMPABLE, 0L, 0L, 0L, 0L) != 0 ||
+        prctl(PR_GET_DUMPABLE, 0L, 0L, 0L, 0L) != 0)
+      _exit(2);
     no_core.rlim_cur = no_core.rlim_max = 0;
     if (setrlimit(RLIMIT_CORE, &no_core) != 0)
       _exit(2);

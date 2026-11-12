@@ -115,14 +115,9 @@ lonejson__serialize_map_pretty(const lonejson_map *map, const void *src,
         return status;
       }
     }
-    status = lonejson__emit_escaped_len(state->sink, state->user, state->error,
-                                        map->fields[i].json_key,
-                                        map->fields[i].json_key_len);
-    if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
-      return status;
-    }
-    status = lonejson__emit_cstr(state->sink, state->user, state->error,
-                                 state->pretty ? ": " : ":");
+    status = lonejson__emit_escaped_key(
+        state->sink, state->user, state->error, map->fields[i].json_key,
+        map->fields[i].json_key_len, state->pretty);
     if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
       return status;
     }
@@ -910,12 +905,8 @@ static lonejson_status lonejson__serialize_map_compact(const lonejson_map *map,
       }
     }
     status =
-        lonejson__emit_escaped_len(sink, user, error, map->fields[i].json_key,
-                                   map->fields[i].json_key_len);
-    if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
-      return status;
-    }
-    status = lonejson__emit_cstr(sink, user, error, ":");
+        lonejson__emit_escaped_key(sink, user, error, map->fields[i].json_key,
+                                   map->fields[i].json_key_len, 0);
     if (status != LONEJSON_STATUS_OK && status != LONEJSON_STATUS_TRUNCATED) {
       return status;
     }

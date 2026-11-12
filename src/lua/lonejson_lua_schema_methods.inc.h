@@ -94,20 +94,25 @@ static int ljlua_record_index(lua_State *L) {
   ljlua_record_ud *ud = ljlua_check_record(L, 1);
   const char *key = luaL_checkstring(L, 2);
   ljlua_compiled_path *compiled;
-  if (strcmp(key, "get") == 0) {
-    lua_pushcfunction(L, ljlua_record_get);
-    return 1;
+  lua_CFunction method = NULL;
+  switch (key[0]) {
+  case 'g':
+    if (strcmp(key, "get") == 0)
+      method = ljlua_record_get;
+    break;
+  case 't':
+    if (strcmp(key, "to_table") == 0)
+      method = ljlua_record_to_table_method;
+    break;
+  case 'c':
+    if (strcmp(key, "count") == 0)
+      method = ljlua_record_count;
+    else if (strcmp(key, "clear") == 0)
+      method = ljlua_record_clear;
+    break;
   }
-  if (strcmp(key, "to_table") == 0) {
-    lua_pushcfunction(L, ljlua_record_to_table_method);
-    return 1;
-  }
-  if (strcmp(key, "count") == 0) {
-    lua_pushcfunction(L, ljlua_record_count);
-    return 1;
-  }
-  if (strcmp(key, "clear") == 0) {
-    lua_pushcfunction(L, ljlua_record_clear);
+  if (method != NULL) {
+    lua_pushcfunction(L, method);
     return 1;
   }
   compiled = ljlua_find_compiled_path(ud->schema, key);

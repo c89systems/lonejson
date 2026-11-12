@@ -5,15 +5,9 @@ local lj_pretty = lonejson.new({ write_pretty = true })
 local core = lonejson.core
 local HAVE_CJSON, cjson = pcall(require, "cjson")
 
-local BENCH_SAMPLE_COUNT = 5
-local BENCH_MIN_SAMPLE_NS = 500000000
-local BENCH_CONFIRM_ATTEMPTS = 3
-local BENCH_CONFIRM_COOLDOWN_SECONDS =
-  tonumber(os.getenv("LONEJSON_BENCH_CONFIRM_COOLDOWN_SECONDS") or "10") or 10
+local measurement = dofile('bench/lonejson_measure.lua')
+
 local BENCH_SCHEMA_VERSION = 30
-local BENCH_NOISE_DELTA_PCT = 3.0
-local BENCH_MATERIAL_DELTA_PCT = 10.0
-local BENCH_REVIEW_IMPROVEMENT_PCT = 15.0
 
 local PARSE_JSON = table.concat({
   '{"name":"Alice","nickname":"Wonderland","age":34,',
@@ -58,38 +52,6 @@ local function read_file(path)
   return data
 end
 
-local function current_dir()
-  local p = io.popen("pwd", "r")
-  local out
-  if p == nil then
-    return nil
-  end
-  out = p:read("*a") or ""
-  p:close()
-  out = out:gsub("%s+$", "")
-  if out == "" then
-    return nil
-  end
-  return out
-end
-
-local function portable_path(path)
-  local cwd = current_dir()
-  if type(path) ~= "string" or path == "" then
-    return path
-  end
-  if cwd ~= nil and path:sub(1, #cwd) == cwd then
-    local relative = path:sub(#cwd + 1)
-    if relative:sub(1, 1) == "/" then
-      relative = relative:sub(2)
-    end
-    if relative ~= "" then
-      return relative
-    end
-  end
-  return path
-end
-
 local JAPANESE_UTF8_JSON = read_file("tests/fixtures/languages/japanese_hojoki.json")
 local HEBREW_UTF8_JSON = read_file("tests/fixtures/languages/hebrew_fox_and_stork.json")
 local ARABIC_UTF8_JSON = read_file("tests/fixtures/languages/arabic_kalila_intro.json")
@@ -101,17 +63,6 @@ local JAPANESE_UTF8_PREFIX = "行く川のながれは絶えずして、しか�
 local HEBREW_UTF8_PREFIX = "השועל והחסידה הוא משל."
 local ARABIC_UTF8_PREFIX = "قدمها بهنود بن سحوان ويعرف بعلي بن الشاه الفارسي."
 
-local function append_file(path, payload)
-  local f = assert(io.open(path, "ab"))
-  assert(f:write(payload))
-  assert(f:write("\n"))
-  f:close()
-end
-
-local function ensure_dir(path)
-  assert(os.execute("mkdir -p " .. path) == true or os.execute("mkdir -p " .. path) == 0)
-end
-
 local function utc_timestamp_from_ns(ns)
   local sec = math.floor(ns / 1000000000)
   return os.date("!%Y-%m-%dT%H:%M:%SZ", sec)
@@ -119,60 +70,6 @@ end
 
 local function wall_clock_epoch_ns()
   return os.time() * 1000000000
-end
-
-local function mib_per_sec(bytes, elapsed_ns)
-  return (bytes / (1024.0 * 1024.0)) / (elapsed_ns / 1000000000.0)
-end
-
-local function docs_per_sec(docs, elapsed_ns)
-  return docs / (elapsed_ns / 1000000000.0)
-end
-
-local function ns_per_byte(bytes, elapsed_ns)
-  return elapsed_ns / bytes
-end
-
-local function shallow_copy(tbl)
-  local out = {}
-  local k
-  for k, v in pairs(tbl) do
-    out[k] = v
-  end
-  return out
-end
-
-local function classify_delta(delta_pct)
-  if delta_pct <= -BENCH_MATERIAL_DELTA_PCT then
-    return "material-reg"
-  end
-  if delta_pct <= -BENCH_NOISE_DELTA_PCT then
-    return "small-reg"
-  end
-  if delta_pct >= BENCH_REVIEW_IMPROVEMENT_PCT then
-    return "review-imp"
-  end
-  if delta_pct >= BENCH_MATERIAL_DELTA_PCT then
-    return "material-imp"
-  end
-  if delta_pct >= BENCH_NOISE_DELTA_PCT then
-    return "small-imp"
-  end
-  return "noise"
-end
-
-local function format_sibling_mib(value)
-  if type(value) == "number" and value > 0.0 then
-    return string.format("%.3f", value)
-  end
-  return "-"
-end
-
-local function format_sibling_ratio(value)
-  if type(value) == "number" and value > 0.0 then
-    return string.format("%.3fx", value)
-  end
-  return "-"
 end
 
 local Address = lj.object {
@@ -326,55 +223,6 @@ end
 local WorkloadRun = build_workload_run_schema(lj, "BenchWorkloadRun")
 local WorkloadRunReuse = build_workload_run_schema(lj_reuse, "BenchWorkloadRunReuse")
 
-local BenchResultSchema = lj.object {
-  fields = {
-    lj.field("name", lj.string { required = true, fixed_capacity = 64, overflow = "fail" }),
-    lj.field("group", lj.string { required = true, fixed_capacity = 24, overflow = "fail" }),
-    lj.field("elapsed_ns", lj.i64 { required = true }),
-    lj.field("total_bytes", lj.i64 { required = true }),
-    lj.field("total_documents", lj.i64 { required = true }),
-    lj.field("mismatch_count", lj.i64 { required = true }),
-    lj.field("mib_per_sec", lj.f64 { required = true }),
-    lj.field("docs_per_sec", lj.f64 { required = true }),
-    lj.field("ns_per_byte", lj.f64 { required = true }),
-    lj.field("sibling_name", lj.string { fixed_capacity = 64, overflow = "fail" }),
-    lj.field("sibling_mib_per_sec", lj.f64()),
-    lj.field("sibling_ratio", lj.f64()),
-  },
-}
-
-local BenchRunSchema = lj.schema("LuaBenchRun", {
-  lj.field("schema_version", lj.i64 { required = true }),
-  lj.field("timestamp_epoch_ns", lj.i64 { required = true }),
-  lj.field("timestamp_utc", lj.string { required = true, fixed_capacity = 32, overflow = "fail" }),
-  lj.field("host", lj.string { required = true, fixed_capacity = 64, overflow = "fail" }),
-  lj.field("lua_version", lj.string { required = true, fixed_capacity = 32, overflow = "fail" }),
-  lj.field("c_latest_path", lj.string { fixed_capacity = 256, overflow = "fail" }),
-  lj.field("iterations", lj.i64 { required = true }),
-  lj.field("results", lj.object_array { required = true, fields = BenchResultSchema.fields, fixed_capacity = 64, overflow = "fail" }),
-})
-
-local CLatestResult = lj.object {
-  fields = {
-    lj.field("name", lj.string { required = true, fixed_capacity = 64, overflow = "fail" }),
-    lj.field("mib_per_sec", lj.f64 { required = true }),
-    lj.field("mismatch_count", lj.i64 {}),
-  },
-}
-
-local CLatestRun = lj.schema("CBenchRunSubset", {
-  lj.field("host", lj.string { required = true, fixed_capacity = 64, overflow = "fail" }),
-  lj.field("compiler", lj.string { required = true, fixed_capacity = 64, overflow = "fail" }),
-  lj.field("toolchain", lj.string { required = true, fixed_capacity = 128, overflow = "fail" }),
-  lj.field("schema_version", lj.i64 { required = true }),
-  lj.field("iterations", lj.i64 { required = true }),
-  lj.field("parser_buffer_size", lj.i64 { required = true }),
-  lj.field("push_parser_buffer_size", lj.i64 { required = true }),
-  lj.field("reader_buffer_size", lj.i64 { required = true }),
-  lj.field("stream_buffer_size", lj.i64 { required = true }),
-  lj.field("results", lj.object_array { required = true, fields = CLatestResult.fields, fixed_capacity = 64, overflow = "fail" }),
-})
-
 local WORKLOAD_JSONL = read_file("tests/fixtures/workloadbench.jsonl")
 local BENCH_RECORD_COMPACT_JSON = read_file("tests/golden/bench_record_compact.json")
 local BENCH_RECORD_PRETTY_JSON = read_file("tests/golden/bench_record_pretty.json")
@@ -382,8 +230,8 @@ local WORKLOAD_LINES = {}
 for line in WORKLOAD_JSONL:gmatch("[^\r\n]+") do
   WORKLOAD_LINES[#WORKLOAD_LINES + 1] = line
 end
-
 local EXPECTED_LABEL = "bravo-longer-th"
+
 local function build_serialize_source()
   return {
     name = "Alice",
@@ -606,111 +454,6 @@ end
 
 local function cjson_decode(json)
   return cjson.decode(json)
-end
-
-local function load_c_siblings(path)
-  local run
-  local index = {}
-  local i
-
-  if path == nil or path == "" then
-    return index
-  end
-  local f = io.open(path, "rb")
-  if f == nil then
-    return index
-  end
-  f:close()
-  run = CLatestRun:decode_path(path)
-  for i = 1, #run.results do
-    index[run.results[i].name] = run.results[i].mib_per_sec
-  end
-  return index
-end
-
-local function shell_quote(s)
-  return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
-end
-
-local function best_sample(samples)
-  table.sort(samples, function(a, b)
-    return a.ns_per_byte < b.ns_per_byte
-  end)
-  return samples[1]
-end
-
-local function build_bench_result(case, sample, sibling_mib)
-  local result = {
-    name = case.name,
-    group = case.group,
-    elapsed_ns = sample.elapsed_ns,
-    total_bytes = sample.total_bytes,
-    total_documents = sample.total_documents,
-    mismatch_count = sample.mismatch_count,
-    mib_per_sec = mib_per_sec(sample.total_bytes, sample.elapsed_ns),
-    docs_per_sec = docs_per_sec(sample.total_documents, sample.elapsed_ns),
-    ns_per_byte = ns_per_byte(sample.total_bytes, sample.elapsed_ns),
-    sibling_name = case.sibling_name,
-  }
-  if sibling_mib ~= nil and sibling_mib > 0.0 then
-    result.sibling_mib_per_sec = sibling_mib
-    result.sibling_ratio = result.mib_per_sec / sibling_mib
-  end
-  return result
-end
-
-local function measure_case(case, iterations)
-  local samples = {}
-  local sample_index
-  local sample_min_ns = case.min_sample_ns or BENCH_MIN_SAMPLE_NS
-
-  collectgarbage("collect")
-  collectgarbage("stop")
-  if not case.run_once() then
-    collectgarbage("restart")
-    return {
-      elapsed_ns = 1,
-      total_bytes = case.bytes_per_call,
-      total_documents = case.docs_per_call,
-      mismatch_count = 1,
-      ns_per_byte = 0,
-    }
-  end
-  collectgarbage("restart")
-
-  for sample_index = 1, BENCH_SAMPLE_COUNT do
-    local total_bytes = 0
-    local total_documents = 0
-    local mismatch_count = 0
-    collectgarbage("collect")
-    collectgarbage("stop")
-    local start_ns = core.monotonic_ns()
-    local elapsed_ns = 0
-
-    repeat
-      local iteration
-      for iteration = 1, iterations do
-        local ok = case.run_once()
-        if not ok then
-          mismatch_count = mismatch_count + 1
-        end
-        total_bytes = total_bytes + case.bytes_per_call
-        total_documents = total_documents + case.docs_per_call
-      end
-      elapsed_ns = core.monotonic_ns() - start_ns
-    until elapsed_ns >= sample_min_ns
-    collectgarbage("restart")
-
-    samples[sample_index] = {
-      elapsed_ns = elapsed_ns,
-      total_bytes = total_bytes,
-      total_documents = total_documents,
-      mismatch_count = mismatch_count,
-      ns_per_byte = ns_per_byte(total_bytes, elapsed_ns),
-    }
-  end
-
-  return best_sample(samples)
 end
 
 local function bench_cases()
@@ -965,7 +708,6 @@ local function bench_cases()
       name = "decode/record_fixed_prepared/lua",
       group = "decode",
       sibling_name = "parse/buffer_fixed_prepared/lonejson",
-      min_sample_ns = 250000000,
       bytes_per_call = #PARSE_JSON,
       docs_per_call = 1,
       run_once = function()
@@ -1120,7 +862,6 @@ local function bench_cases()
       name = "stream/doc_japanese_wide/lua",
       group = "stream",
       sibling_name = "stream/doc_japanese_wide/lonejson",
-      min_sample_ns = 250000000,
       bytes_per_call = #JAPANESE_UTF8_WIDE_JSON,
       docs_per_call = 1,
       run_once = function()
@@ -1282,519 +1023,77 @@ local function bench_cases()
   return cases
 end
 
-local function build_run(iterations, c_latest_path)
-  local cases = bench_cases()
-  local c_siblings = load_c_siblings(c_latest_path)
-  local results = {}
-  local i
-  local now_ns = wall_clock_epoch_ns()
-
-  for i = 1, #cases do
-    local sample = measure_case(cases[i], iterations)
-    local sibling_mib = c_siblings[cases[i].sibling_name]
-    results[#results + 1] = build_bench_result(cases[i], sample, sibling_mib)
-  end
-
-  return {
-    schema_version = BENCH_SCHEMA_VERSION,
-    timestamp_epoch_ns = now_ns,
-    timestamp_utc = utc_timestamp_from_ns(now_ns),
-    host = benchmark_host_id(),
-    lua_version = _VERSION,
-    c_latest_path = portable_path(c_latest_path),
-    iterations = iterations,
-    results = results,
-  }
-end
-
-local function find_case_by_name(case_name)
-  local cases = bench_cases()
-  local i
-
-  for i = 1, #cases do
-    if cases[i].name == case_name then
-      return cases[i]
-    end
-  end
-  return nil
-end
-
-local function run_single_case(case_name, iterations, c_latest_path)
-  local c_siblings = load_c_siblings(c_latest_path)
-  local case = find_case_by_name(case_name)
-  local sample
-  local result
-
-  if case == nil then
-    error("unknown benchmark case: " .. case_name)
-  end
-  sample = measure_case(case, iterations)
-  result = build_bench_result(case, sample, c_siblings[case.sibling_name])
-  print(string.format("%s %s %.3f MiB/s %.1f docs/s mismatch=%d c_sib=%s ratio=%s",
-    result.name,
-    result.group,
-    result.mib_per_sec,
-    result.docs_per_sec,
-    result.mismatch_count,
-    format_sibling_mib(result.sibling_mib_per_sec),
-    format_sibling_ratio(result.sibling_ratio)))
-  return result
-end
-
-local function print_run(run)
-  local i
-  print(string.format("lua benchmark run %s on %s", run.timestamp_utc, run.host))
-  print(string.format("%-34s %-10s %12s %12s %12s %12s",
-    "name", "group", "MiB/s", "docs/s", "C sib", "L/C"))
-  for i = 1, #run.results do
-    local r = run.results[i]
-    print(string.format("%-34s %-10s %12.3f %12.1f %12s %12s",
-      r.name,
-      r.group,
-      r.mib_per_sec,
-      r.docs_per_sec,
-      format_sibling_mib(r.sibling_mib_per_sec),
-      format_sibling_ratio(r.sibling_ratio)))
+-- Workers execute the entire suite. Timing summaries, report validation and
+-- regression gates are shared with C through lonejson_bench merge/compare/gate.
+assert(arg[1] == 'round' and arg[2] and arg[3],
+  'usage: lonejson_lua_bench.lua round <output> <pilot-or-dash> [case]')
+local plan = {}
+if arg[3] ~= '-' then
+  for _, result in ipairs(lj.decode_json(read_file(arg[3])).results) do
+    plan[result.name] = result.batch_iterations
   end
 end
-
-local function write_outputs(run, latest_path, history_path, archive_dir)
-  local payload = BenchRunSchema:encode(run)
-  local ok
-  ensure_dir(archive_dir)
-  ensure_dir(string.match(latest_path, "(.+)/[^/]+$"))
-  ensure_dir(string.match(history_path, "(.+)/[^/]+$"))
-  ok = BenchRunSchema:write_path(run, latest_path)
-  assert(ok == true, type(ok) == "table" and ok.message or "failed to write latest benchmark output")
-  append_file(history_path, payload)
-  ok = BenchRunSchema:write_path(run, string.format("%s/%d.json", archive_dir, run.timestamp_epoch_ns))
-  assert(ok == true, type(ok) == "table" and ok.message or "failed to write archived benchmark output")
+local budgets = {}
+for line in io.lines(os.getenv('LONEJSON_BENCH_PLAN') or 'bench/workloads.tsv') do
+  local name, ns = line:match('^%S+%s+(%S+)%s+(%d+)$')
+  assert(name and not budgets[name], 'invalid case budget')
+  budgets[name] = tonumber(ns)
 end
-
-local function freeze_baseline(history_path, baseline_path)
-  local f = assert(io.open(history_path, "rb"))
-  local last
-  for line in f:lines() do
-    if line ~= "" then
-      last = line
-    end
-  end
-  f:close()
-  assert(last ~= nil, "history is empty")
-  ensure_dir(string.match(baseline_path, "(.+)/[^/]+$"))
-  local out = assert(io.open(baseline_path, "wb"))
-  assert(out:write(last))
-  out:close()
-end
-
-local function index_results(run)
-  local out = {}
-  local i
-  for i = 1, #run.results do
-    out[run.results[i].name] = run.results[i]
-  end
-  return out
-end
-
-local function compare_runs(baseline_path, latest_path)
-  local baseline = BenchRunSchema:decode_path(baseline_path)
-  local latest = BenchRunSchema:decode_path(latest_path)
-  local baseline_index = index_results(baseline)
-  local i
-
-  print(string.format("lua compare baseline=%s latest=%s", baseline_path, latest_path))
-  print(string.format("%-34s %12s %12s %10s %-12s %12s %12s",
-    "name", "latest", "baseline", "delta", "class", "C sib", "L/C"))
-  for i = 1, #latest.results do
-    local current = latest.results[i]
-    local prior = baseline_index[current.name]
-    local delta_pct
-    local cls
-    if prior ~= nil and prior.mib_per_sec ~= 0.0 then
-      delta_pct = ((current.mib_per_sec - prior.mib_per_sec) / prior.mib_per_sec) * 100.0
-      if (prior.mismatch_count or 0) ~= 0 or (current.mismatch_count or 0) ~= 0 then
-        cls = "broken"
-      else
-        cls = classify_delta(delta_pct)
-      end
-    else
-      delta_pct = 0.0
-      if (current.mismatch_count or 0) ~= 0 then
-        cls = "broken"
-      else
-        cls = "new"
-      end
-    end
-    print(string.format("%-34s %12.3f %12s %9.2f%% %-12s %12s %12s",
-      current.name,
-      current.mib_per_sec,
-      prior and string.format("%.3f", prior.mib_per_sec) or "-",
-      delta_pct,
-      cls,
-      format_sibling_mib(current.sibling_mib_per_sec),
-      format_sibling_ratio(current.sibling_ratio)))
+local results = {}
+collectgarbage('restart')
+local cases = bench_cases()
+local round = tonumber(os.getenv('LONEJSON_BENCH_ROUND')) or 0
+for step = 0, #cases - 1 do
+  local index = measurement.case_index(#cases, round, step)
+  local case = cases[index]
+  if not arg[4] or case.name == arg[4] then
+    local target = budgets[case.name]
+    if not target and case.name:sub(-6) == '/cjson' then target = measurement.target_sample_ns end
+    assert(target, 'missing case budget: ' .. case.name)
+    local count = plan[case.name]
+    assert(arg[3] == '-' or (count and count > 0), 'missing work plan: ' .. case.name)
+    -- Settle allocations from fixture construction and the preceding case.
+    -- Normal automatic GC remains enabled throughout the timed operations.
+    collectgarbage('collect')
+    local measured = measurement.measure(case.run_once, count or 1,
+      core.monotonic_ns, function() return math.floor(os.clock() * 1000000000) end,
+      count ~= nil, target)
+    local sample = measured.samples[1]
+    local rate = case.bytes_per_call * sample.iterations * 1000000000 / (sample.elapsed_ns * 1048576)
+    results[#results + 1] = {
+      name = case.name, group = case.group, samples = measured.samples,
+      target_sample_ns = target,
+      batch_iterations = sample.iterations, elapsed_ns = sample.elapsed_ns,
+      total_bytes = case.bytes_per_call * sample.iterations,
+      total_documents = case.docs_per_call * sample.iterations,
+      warmup_elapsed_ns = measured.warmup_elapsed_ns, mismatch_count = 0,
+      mib_per_sec = rate, mib_per_sec_low = rate, mib_per_sec_high = rate,
+      docs_per_sec = case.docs_per_call * sample.iterations * 1000000000 / sample.elapsed_ns,
+      ns_per_byte = sample.elapsed_ns / (case.bytes_per_call * sample.iterations),
+      cv_pct = 0, drift_pct = 0, relative_error_pct = 0,
+      drift_ci_low_pct = 0, drift_ci_high_pct = 0,
+    }
   end
 end
-
-local function is_material_regression(prior, current)
-  local delta_pct
-  if prior == nil or prior.mib_per_sec == 0.0 then
-    return false
-  end
-  if current.mib_per_sec >= prior.mib_per_sec then
-    return false
-  end
-  delta_pct = ((current.mib_per_sec - prior.mib_per_sec) / prior.mib_per_sec) * 100.0
-  return classify_delta(delta_pct) == "material-reg"
-end
-
-local function is_small_regression(prior, current)
-  local delta_pct
-  if prior == nil or prior.mib_per_sec == 0.0 then
-    return false
-  end
-  if current.mib_per_sec >= prior.mib_per_sec then
-    return false
-  end
-  delta_pct = ((current.mib_per_sec - prior.mib_per_sec) / prior.mib_per_sec) * 100.0
-  return classify_delta(delta_pct) == "small-reg"
-end
-
-local function is_large_improvement(prior, current)
-  local delta_pct
-  if prior == nil or prior.mib_per_sec == 0.0 then
-    return false
-  end
-  if current.mib_per_sec <= prior.mib_per_sec then
-    return false
-  end
-  delta_pct = ((current.mib_per_sec - prior.mib_per_sec) / prior.mib_per_sec) * 100.0
-  return classify_delta(delta_pct) == "review-imp"
-end
-
-local function gate_tracked_result(current)
-  return not current.name:match("/cjson$")
-end
-
-local function gate_runs(baseline_path, latest_path)
-  local baseline = BenchRunSchema:decode_path(baseline_path)
-  local latest = BenchRunSchema:decode_path(latest_path)
-  local baseline_index = index_results(baseline)
-  local schema_mismatch = baseline.schema_version ~= latest.schema_version
-  local missing = 0
-  local mismatches = 0
-  local small = 0
-  local material = 0
-  local review = 0
-  local i
-
-  for i = 1, #latest.results do
-    local current = latest.results[i]
-    local prior = baseline_index[current.name]
-    if not gate_tracked_result(current) then
-      -- Ignore non-lonejson sibling/reference lanes in the hard gate.
-    elseif (current.mismatch_count or 0) ~= 0 then
-      mismatches = mismatches + 1
-    elseif prior == nil then
-      missing = missing + 1
-    elseif is_small_regression(prior, current) then
-      small = small + 1
-    elseif is_material_regression(prior, current) then
-      material = material + 1
-    elseif is_large_improvement(prior, current) then
-      review = review + 1
-    end
-  end
-
-  print(string.format("lua gate baseline=%s latest=%s", baseline_path, latest_path))
-  print(string.format("  schema mismatch: %s", schema_mismatch and "yes" or "no"))
-  print(string.format("  missing results: %d", missing))
-  print(string.format("  result mismatches: %d", mismatches))
-  print(string.format("  small regressions: %d", small))
-  print(string.format("  material regressions: %d", material))
-  print(string.format("  large improvements to review: %d", review))
-
-  if schema_mismatch or missing ~= 0 or mismatches ~= 0 or material ~= 0 then
-    if schema_mismatch or missing ~= 0 then
-      io.stderr:write("lua benchmark gate failed: fix the regressions, and refresh the baseline only if the benchmark schema/result set intentionally changed\n")
-    elseif mismatches ~= 0 then
-      io.stderr:write("lua benchmark gate failed: benchmark case mismatches must be zero before landing\n")
-    else
-      io.stderr:write("lua benchmark gate failed: fix the regressions before landing\n")
-    end
-    os.exit(1)
-  end
-end
-
-local function c_is_retry_worthy(prior, current)
-  if prior == nil then
-    return true
-  end
-  if (current.mismatch_count or 0) ~= 0 then
-    return true
-  end
-  return is_material_regression(prior, current)
-end
-
-local function lua_is_retry_worthy(prior, current)
-  if not gate_tracked_result(current) then
-    return false
-  end
-  if prior == nil then
-    return true
-  end
-  if (current.mismatch_count or 0) ~= 0 then
-    return true
-  end
-  return is_material_regression(prior, current)
-end
-
-local function print_retry_delta(label, prior, current)
-  local delta_pct = 0.0
-  if prior ~= nil and prior.mib_per_sec ~= 0.0 then
-    delta_pct = ((current.mib_per_sec - prior.mib_per_sec) / prior.mib_per_sec) * 100.0
-  end
-  io.stderr:write(string.format(
-    "%s retry %s: latest=%.3f baseline=%s delta=%.2f%% mismatch=%d\n",
-    label,
-    current.name,
-    current.mib_per_sec,
-    prior and string.format("%.3f", prior.mib_per_sec) or "-",
-    delta_pct,
-    current.mismatch_count or 0))
-end
-
-local function parse_c_case_output(line)
-  local name, mib_per_sec, docs_per_sec, ns_per_byte, mismatch_count =
-    line:match("^(%S+)%s+([%+%-]?%d+%.?%d*)%s+MiB/s%s+([%+%-]?%d+%.?%d*)%s+docs/s%s+([%+%-]?%d+%.?%d*)%s+ns/byte%s+mismatches=(%d+)")
-  if name == nil then
-    name, mib_per_sec, docs_per_sec, mismatch_count =
-      line:match("^(%S+)%s+%S+%s+([%+%-]?%d+%.?%d*)%s+MiB/s%s+([%+%-]?%d+%.?%d*)%s+docs/s%s+mismatch=(%d+)")
-  end
-  if name == nil then
-    return nil
-  end
-  return {
-    name = name,
-    mib_per_sec = tonumber(mib_per_sec),
-    docs_per_sec = tonumber(docs_per_sec),
-    ns_per_byte = tonumber(ns_per_byte),
-    mismatch_count = tonumber(mismatch_count),
-  }
-end
-
-local function parse_lua_case_output(line)
-  local name, group, mib_per_sec, docs_per_sec, mismatch_count =
-    line:match("^(%S+)%s+(%S+)%s+([%+%-]?%d+%.?%d*)%s+MiB/s%s+([%+%-]?%d+%.?%d*)%s+docs/s%s+mismatch=(%d+)")
-  if name == nil then
-    return nil
-  end
-  return {
-    name = name,
-    group = group,
-    mib_per_sec = tonumber(mib_per_sec),
-    docs_per_sec = tonumber(docs_per_sec),
-    mismatch_count = tonumber(mismatch_count),
-  }
-end
-
-local function run_c_case(bench_bin, case_name, iterations)
-  local cmd = string.format("%s case %s %d 2>/dev/null",
-    shell_quote(bench_bin), shell_quote(case_name), iterations)
-  local pipe = assert(io.popen(cmd, "r"))
-  local output = pipe:read("*a")
-  local ok, _, status = pipe:close()
-  local line
-
-  if ok ~= true or status ~= 0 then
-    error("c benchmark case command failed for " .. case_name)
-  end
-  line = output:match("([^\r\n]+)")
-  if line == nil then
-    error("c benchmark case command produced no output for " .. case_name)
-  end
-  local result = parse_c_case_output(line)
-  if result == nil then
-    error("failed to parse c benchmark case output for " .. case_name .. ": " .. line)
-  end
-  return result
-end
-
-local function benchmark_retry_cooldown()
-  if BENCH_CONFIRM_COOLDOWN_SECONDS <= 0 then
-    return
-  end
-  io.stderr:write(string.format("waiting %ds before benchmark retry\n",
-    BENCH_CONFIRM_COOLDOWN_SECONDS))
-  os.execute(string.format("sleep %d", BENCH_CONFIRM_COOLDOWN_SECONDS))
-end
-
-local function run_lua_case_fresh(c_latest_path, case_name, iterations)
-  local target_runner = os.getenv("LONEJSON_LUA_TARGET_RUNNER")
-  local lua_bin = arg[-1] or "lua"
-  local script_path = arg[0] or "bench/lonejson_lua_bench.lua"
-  local cmd
-  if target_runner ~= nil and target_runner ~= "" then
-    cmd = string.format("%s %s %s -- %s case %s %s %d 2>/dev/null",
-      shell_quote(target_runner),
-      shell_quote(assert(os.getenv("LONEJSON_LUA_SOURCE_DIR"))),
-      shell_quote(assert(os.getenv("LONEJSON_LUA_BUILD_DIR"))),
-      shell_quote(script_path), shell_quote(c_latest_path),
-      shell_quote(case_name), iterations)
-  else
-    cmd = string.format("%s %s case %s %s %d 2>/dev/null",
-      shell_quote(lua_bin), shell_quote(script_path), shell_quote(c_latest_path),
-      shell_quote(case_name), iterations)
-  end
-  local pipe = assert(io.popen(cmd, "r"))
-  local output = pipe:read("*a")
-  local ok, _, status = pipe:close()
-  local line
-
-  if ok ~= true or status ~= 0 then
-    error("lua benchmark case command failed for " .. case_name)
-  end
-  line = output:match("([^\r\n]+)")
-  if line == nil then
-    error("lua benchmark case command produced no output for " .. case_name)
-  end
-  local result = parse_lua_case_output(line)
-  if result == nil then
-    error("failed to parse lua benchmark case output for " .. case_name .. ": " .. line)
-  end
-  return result
-end
-
-local function confirm_c_gate(bench_bin, baseline_path, latest_path, iterations)
-  local baseline = CLatestRun:decode_path(baseline_path)
-  local latest = CLatestRun:decode_path(latest_path)
-  if baseline.host ~= latest.host or baseline.compiler ~= latest.compiler or
-      baseline.toolchain ~= latest.toolchain then
-    io.stderr:write("c benchmark retry cannot confirm a host/compiler/toolchain mismatch\n")
-    os.exit(1)
-  end
-  local baseline_index = index_results(baseline)
-  local schema_mismatch = baseline.schema_version ~= latest.schema_version
-  local config_mismatch =
-    baseline.iterations ~= latest.iterations or
-    baseline.parser_buffer_size ~= latest.parser_buffer_size or
-    baseline.push_parser_buffer_size ~= latest.push_parser_buffer_size or
-    baseline.reader_buffer_size ~= latest.reader_buffer_size or
-    baseline.stream_buffer_size ~= latest.stream_buffer_size
-  local i
-
-  if schema_mismatch then
-    io.stderr:write("c benchmark retry cannot confirm a schema mismatch\n")
-    os.exit(1)
-  end
-  if config_mismatch then
-    io.stderr:write("c benchmark retry cannot confirm a config mismatch\n")
-    os.exit(1)
-  end
-
-  for i = 1, #latest.results do
-    local current = latest.results[i]
-    local prior = baseline_index[current.name]
-    if c_is_retry_worthy(prior, current) then
-      local retry
-      local attempt
-      local confirmed = true
-      for attempt = 1, BENCH_CONFIRM_ATTEMPTS do
-        benchmark_retry_cooldown()
-        io.stderr:write(string.format("retrying c benchmark case %d/%d: %s\n",
-          attempt, BENCH_CONFIRM_ATTEMPTS, current.name))
-        retry = run_c_case(bench_bin, current.name, iterations)
-        print_retry_delta("c", prior, retry)
-        if not c_is_retry_worthy(prior, retry) then
-          confirmed = false
-          break
-        end
-      end
-      if confirmed then
-        io.stderr:write("c benchmark retry confirmed the failure; stopping immediately\n")
-        os.exit(1)
-      end
-    end
-  end
-end
-
-local function confirm_lua_gate(c_latest_path, baseline_path, latest_path, iterations)
-  local baseline = BenchRunSchema:decode_path(baseline_path)
-  local latest = BenchRunSchema:decode_path(latest_path)
-  local baseline_index = index_results(baseline)
-  local i
-
-  if baseline.schema_version ~= latest.schema_version then
-    io.stderr:write("lua benchmark retry cannot confirm a schema mismatch\n")
-    os.exit(1)
-  end
-
-  for i = 1, #latest.results do
-    local current = latest.results[i]
-    local prior = baseline_index[current.name]
-    if lua_is_retry_worthy(prior, current) then
-      local case = find_case_by_name(current.name)
-      local retry
-      local attempt
-      local confirmed = true
-      if case == nil then
-        io.stderr:write("lua benchmark retry cannot find case: " .. current.name .. "\n")
-        os.exit(1)
-      end
-      for attempt = 1, BENCH_CONFIRM_ATTEMPTS do
-        benchmark_retry_cooldown()
-        io.stderr:write(string.format("retrying lua benchmark case %d/%d: %s\n",
-          attempt, BENCH_CONFIRM_ATTEMPTS, current.name))
-        retry = run_lua_case_fresh(c_latest_path, current.name, iterations)
-        print_retry_delta("lua", prior, retry)
-        if not lua_is_retry_worthy(prior, retry) then
-          confirmed = false
-          break
-        end
-      end
-      if confirmed then
-        io.stderr:write("lua benchmark retry confirmed the failure; stopping immediately\n")
-        os.exit(1)
-      end
-    end
-  end
-end
-
-local function usage()
-  io.stderr:write("usage:\n")
-  io.stderr:write("  lua bench/lonejson_lua_bench.lua run <c_latest> <latest> <history> <archive_dir> <iterations>\n")
-  io.stderr:write("  lua bench/lonejson_lua_bench.lua case <c_latest> <case_name> <iterations>\n")
-  io.stderr:write("  lua bench/lonejson_lua_bench.lua confirm-c <bench_bin> <baseline> <latest> <iterations>\n")
-  io.stderr:write("  lua bench/lonejson_lua_bench.lua confirm-lua <c_latest> <baseline> <latest> <iterations>\n")
-  io.stderr:write("  lua bench/lonejson_lua_bench.lua freeze-baseline <history> <baseline>\n")
-  io.stderr:write("  lua bench/lonejson_lua_bench.lua compare <baseline> <latest>\n")
-  io.stderr:write("  lua bench/lonejson_lua_bench.lua gate <baseline> <latest>\n")
-  os.exit(1)
-end
-
-local cmd = arg[1]
-
-if cmd == "run" then
-  local c_latest = arg[2]
-  local latest = arg[3]
-  local history = arg[4]
-  local archive_dir = arg[5]
-  local iterations = tonumber(arg[6]) or 1
-  local run = build_run(iterations, c_latest)
-  print_run(run)
-  write_outputs(run, latest, history, archive_dir)
-elseif cmd == "freeze-baseline" then
-  freeze_baseline(arg[2], arg[3])
-elseif cmd == "case" then
-  run_single_case(arg[3], tonumber(arg[4]) or 1, arg[2])
-elseif cmd == "confirm-c" then
-  confirm_c_gate(arg[2], arg[3], arg[4], tonumber(arg[5]) or 1)
-elseif cmd == "confirm-lua" then
-  confirm_lua_gate(arg[2], arg[3], arg[4], tonumber(arg[5]) or 1)
-elseif cmd == "compare" then
-  compare_runs(arg[2], arg[3])
-elseif cmd == "gate" then
-  gate_runs(arg[2], arg[3])
-else
-  usage()
-end
+assert(#results > 0, 'empty benchmark round')
+local toolchain = lj.decode_json(read_file(assert(os.getenv('LONEJSON_BENCH_TOOLCHAIN_FILE'))))
+local now_ns = wall_clock_epoch_ns()
+local run = {
+  schema_version = BENCH_SCHEMA_VERSION, method = measurement.method,
+  affinity = os.getenv('LONEJSON_BENCH_AFFINITY') or 'unbound',
+  source_revision = assert(os.getenv('LONEJSON_BENCH_SOURCE_REVISION')),
+  source_src_tree = os.getenv('LONEJSON_BENCH_SRC_TREE') or 'unversioned',
+  source_include_tree = os.getenv('LONEJSON_BENCH_INCLUDE_TREE') or 'unversioned',
+  source_lua_tree = os.getenv('LONEJSON_BENCH_LUA_TREE') or 'unversioned',
+  implementation_count = tonumber(os.getenv('LONEJSON_BENCH_IMPLEMENTATION_COUNT')) or 1,
+  compiler = toolchain.compiler, toolchain = toolchain.toolchain, lua_version = _VERSION,
+  sample_count = measurement.sample_count, process_count = measurement.sample_count,
+  samples_per_process = 1, warmup_count = measurement.warmup_count, target_sample_ns = measurement.target_sample_ns,
+  confidence_pct = measurement.confidence_pct, max_relative_error_pct = measurement.max_relative_error_pct,
+  max_drift_pct = measurement.max_drift_pct,
+  timestamp_epoch_ns = now_ns, timestamp_utc = utc_timestamp_from_ns(now_ns),
+  host = benchmark_host_id(), iterations = 1, results = results,
+}
+local output = assert(io.open(arg[2], 'wb'))
+assert(output:write(lj.encode_json(run)))
+assert(output:close())

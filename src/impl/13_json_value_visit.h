@@ -284,13 +284,7 @@ lonejson__json_visit_string_value_no_path(lonejson__json_io *io, int is_key) {
 
     span = lonejson__json_cursor_plain_span(io, &available, &uses_read_buffer);
     while (span != NULL && available != 0u) {
-      while (plain_span < available) {
-        unsigned char b = span[plain_span];
-        if (b == '"' || b == '\\' || b < 0x20u) {
-          break;
-        }
-        ++plain_span;
-      }
+      plain_span = lonejson__plain_string_span_words(span, available, 0);
       if (plain_span != 0u) {
         status = lonejson__json_visit_plain_chunk_no_path(
             io, is_key, chunk_fn, plain, &plain_len, &decoded_bytes, limit,
@@ -872,13 +866,7 @@ static lonejson_status lonejson__json_visit_string_value(lonejson__json_io *io,
 
     span = lonejson__json_cursor_plain_span(io, &available, &uses_read_buffer);
     while (span != NULL && available != 0u) {
-      while (plain_span < available) {
-        unsigned char b = span[plain_span];
-        if (b == '"' || b == '\\' || b < 0x20u) {
-          break;
-        }
-        ++plain_span;
-      }
+      plain_span = lonejson__plain_string_span_words(span, available, 0);
       if (plain_span != 0u) {
         status = lonejson__json_visit_plain_chunk(io, is_key, plain, &plain_len,
                                                   &decoded_bytes, limit, span,

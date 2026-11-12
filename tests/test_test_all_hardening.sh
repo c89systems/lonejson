@@ -31,6 +31,8 @@ printf '%s\n' "$valgrind_dry_run" | grep -F -- "-T MemCheck" >/dev/null
 printf '%s\n' "$valgrind_dry_run" | grep -F 'lonejson_curl_rewind_tests' >/dev/null
 printf '%s\n' "$valgrind_dry_run" | grep -F 'lonejson_lua_target_runner' >/dev/null
 printf '%s\n' "$valgrind_dry_run" | grep -F 'lua_target_tests' >/dev/null
+printf '%s\n' "$valgrind_dry_run" | grep -F 'lonejson_bench' >/dev/null
+printf '%s\n' "$valgrind_dry_run" | grep -F 'bench_ownership_' >/dev/null
 
 # A failed prerequisite must stop the real TSan recipe before stale test
 # binaries can supply a green result. Exercise each phase with recording tools.

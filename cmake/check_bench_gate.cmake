@@ -1,172 +1,228 @@
 if(NOT DEFINED LONEJSON_BENCH_EXE)
   message(FATAL_ERROR "LONEJSON_BENCH_EXE is required")
 endif()
-
-set(_tmp_dir "${CMAKE_CURRENT_BINARY_DIR}/bench-gate-check")
-file(REMOVE_RECURSE "${_tmp_dir}")
-file(MAKE_DIRECTORY "${_tmp_dir}")
-
-set(_baseline "${_tmp_dir}/baseline.json")
-set(_latest_mixed "${_tmp_dir}/latest-mixed.json")
-set(_latest_small "${_tmp_dir}/latest-small.json")
-set(_latest_improve "${_tmp_dir}/latest-improve.json")
-set(_latest_broken "${_tmp_dir}/latest-broken.json")
-
-set(_common_prefix [=[
-{"schema_version":12,"timestamp_epoch_ns":1,"timestamp_utc":"2026-04-05T00:00:00Z","host":"test","compiler":"test","toolchain":"test","corpus_path":"test","corpus_file_count":1,"corpus_total_bytes":1,"corpus_y_count":1,"corpus_n_count":0,"corpus_i_count":0,"iterations":100,"parser_buffer_size":4096,"push_parser_buffer_size":4096,"reader_buffer_size":1024,"stream_buffer_size":1024,"results":[
-]=])
-set(_common_suffix "]}")
-
-file(WRITE "${_baseline}"
-  "${_common_prefix}"
-  "{\"name\":\"bench/a\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/b\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/c\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/d\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0}"
-  "${_common_suffix}")
-
-file(WRITE "${_latest_mixed}"
-  "${_common_prefix}"
-  "{\"name\":\"bench/a\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":96.0,\"docs_per_sec\":96.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/b\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":89.0,\"docs_per_sec\":89.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/c\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":111.0,\"docs_per_sec\":111.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/d\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":116.0,\"docs_per_sec\":116.0,\"ns_per_byte\":1.0}"
-  "${_common_suffix}")
-
-file(WRITE "${_latest_small}"
-  "${_common_prefix}"
-  "{\"name\":\"bench/a\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":96.0,\"docs_per_sec\":96.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/b\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/c\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/d\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0}"
-  "${_common_suffix}")
-
-file(WRITE "${_latest_improve}"
-  "${_common_prefix}"
-  "{\"name\":\"bench/a\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/b\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/c\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":111.0,\"docs_per_sec\":111.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/d\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":116.0,\"docs_per_sec\":116.0,\"ns_per_byte\":1.0}"
-  "${_common_suffix}")
-
-file(WRITE "${_latest_broken}"
-  "${_common_prefix}"
-  "{\"name\":\"bench/a\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":1,\"mib_per_sec\":0.0,\"docs_per_sec\":0.0,\"ns_per_byte\":0.0},"
-  "{\"name\":\"bench/b\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/c\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0},"
-  "{\"name\":\"bench/d\",\"group\":\"test\",\"elapsed_ns\":1,\"total_bytes\":1,\"total_documents\":1,\"mismatch_count\":0,\"mib_per_sec\":100.0,\"docs_per_sec\":100.0,\"ns_per_byte\":1.0}"
-  "${_common_suffix}")
-
-execute_process(
-  COMMAND "${LONEJSON_BENCH_EXE}" compare "${_baseline}" "${_latest_mixed}"
-  RESULT_VARIABLE _compare_status
-  OUTPUT_VARIABLE _compare_out
-  ERROR_VARIABLE _compare_err)
-if(NOT _compare_status EQUAL 0)
-  message(FATAL_ERROR "bench compare failed unexpectedly:\n${_compare_out}\n${_compare_err}")
-endif()
-foreach(_needle "small-reg" "material-reg" "material-imp" "review-imp")
-  if(NOT _compare_out MATCHES "${_needle}")
-    message(FATAL_ERROR "bench compare output missing ${_needle}:\n${_compare_out}")
-  endif()
-endforeach()
-
-# Runs with identical performance still cannot pass across hosts or compilers.
-# Reject before classifying deltas so the diagnostic cannot blame source code.
-file(READ "${_baseline}" _reference_json)
-string(REPLACE "\"toolchain\":\"test\"," "" _unproven_json "${_reference_json}")
-file(WRITE "${_tmp_dir}/unproven.json" "${_unproven_json}")
-foreach(_command compare gate)
-  execute_process(
-    COMMAND "${LONEJSON_BENCH_EXE}" "${_command}" "${_tmp_dir}/unproven.json" "${_baseline}"
-    RESULT_VARIABLE _status OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
-  if(_status EQUAL 0 OR NOT _err MATCHES "cannot read benchmark run.*toolchain")
-    message(FATAL_ERROR "${_command} did not diagnose missing provenance: ${_out}${_err}")
-  endif()
-endforeach()
-foreach(_field host compiler toolchain)
-  string(REPLACE "\"${_field}\":\"test\"" "\"${_field}\":\"different\""
-    _different_json "${_reference_json}")
-  set(_different "${_tmp_dir}/different-${_field}.json")
-  file(WRITE "${_different}" "${_different_json}")
-  foreach(_command compare gate)
-    execute_process(
-      COMMAND "${LONEJSON_BENCH_EXE}" "${_command}" "${_baseline}" "${_different}"
-      RESULT_VARIABLE _status OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
-    if(_status EQUAL 0 OR NOT _err MATCHES "benchmark ${_field} mismatch")
-      message(FATAL_ERROR "${_command} accepted incompatible ${_field}: ${_out}${_err}")
+set(work "${CMAKE_CURRENT_BINARY_DIR}/bench-gate-check")
+file(MAKE_DIRECTORY "${work}")
+function(write_run path)
+  set(results "")
+  set(index 0)
+  foreach(rate IN LISTS ARGN)
+    math(EXPR elapsed "100000000000 / ${rate}")
+    math(EXPR ns_per_byte "${elapsed} * 1000000000 / 104857600")
+    set(samples "")
+    foreach(sample RANGE 0 398)
+      math(EXPR process "${sample} + 1")
+      if(sample GREATER 0)
+        string(APPEND samples ",")
+      endif()
+      string(APPEND samples "{\"elapsed_ns\":${elapsed},\"cpu_ns\":${elapsed},\"iterations\":100,\"process_index\":${process},\"mismatch_count\":0}")
+    endforeach()
+    if(index GREATER 0)
+      string(APPEND results ",")
     endif()
-    if(_out MATCHES "material regressions|material-reg")
-      message(FATAL_ERROR "${_command} classified incomparable results: ${_out}")
-    endif()
+    string(APPEND results "{\"name\":\"bench/${index}\",\"group\":\"test\",\"elapsed_ns\":${elapsed},\"total_bytes\":104857600,\"total_documents\":100,\"mismatch_count\":0,\"mib_per_sec\":${rate},\"docs_per_sec\":${rate},\"ns_per_byte\":${ns_per_byte}e-9,\"batch_iterations\":100,\"target_sample_ns\":12000000,\"warmup_elapsed_ns\":1000000000,\"cv_pct\":0,\"drift_pct\":0,\"mib_per_sec_low\":${rate},\"mib_per_sec_high\":${rate},\"relative_error_pct\":0,\"drift_ci_low_pct\":0,\"drift_ci_high_pct\":0,\"samples\":[${samples}]}")
+    math(EXPR index "${index} + 1")
   endforeach()
-endforeach()
-
-execute_process(
-  COMMAND "${LONEJSON_BENCH_EXE}" gate "${_baseline}" "${_latest_mixed}"
-  RESULT_VARIABLE _gate_status
-  OUTPUT_VARIABLE _gate_out
-  ERROR_VARIABLE _gate_err)
-if(_gate_status EQUAL 0)
-  message(FATAL_ERROR "bench gate unexpectedly passed on mixed regressions:\n${_gate_out}\n${_gate_err}")
+  file(WRITE "${path}" "{\"schema_version\":21,\"method\":\"whole-suite-mean\",\"affinity\":\"test\",\"source_revision\":\"fixture\",\"source_src_tree\":\"0000000000000000000000000000000000000000\",\"source_include_tree\":\"0000000000000000000000000000000000000000\",\"source_lua_tree\":\"0000000000000000000000000000000000000000\",\"implementation_count\":1,\"sample_count\":399,\"process_count\":399,\"samples_per_process\":1,\"warmup_count\":1,\"target_sample_ns\":12000000,\"confidence_pct\":95,\"max_relative_error_pct\":5,\"max_drift_pct\":5,\"timestamp_epoch_ns\":1,\"timestamp_utc\":\"2026-11-11T00:00:00Z\",\"host\":\"test\",\"compiler\":\"test\",\"toolchain\":\"test\",\"corpus_path\":\"test\",\"corpus_file_count\":1,\"corpus_total_bytes\":1,\"corpus_y_count\":1,\"corpus_n_count\":0,\"corpus_i_count\":0,\"iterations\":100,\"parser_buffer_size\":4096,\"push_parser_buffer_size\":4096,\"reader_buffer_size\":1024,\"stream_buffer_size\":1024,\"results\":[${results}]}")
+endfunction()
+function(check_gate name expected)
+  execute_process(COMMAND "${LONEJSON_BENCH_EXE}" gate "${work}/baseline.json" "${work}/${name}.json"
+    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error)
+  if(expected STREQUAL "pass" AND NOT status EQUAL 0)
+    message(FATAL_ERROR "${name} unexpectedly failed: ${output}\n${error}")
+  elseif(expected STREQUAL "fail" AND status EQUAL 0)
+    message(FATAL_ERROR "${name} unexpectedly passed: ${output}\n${error}")
+  endif()
+  set(last_output "${output}\n${error}" PARENT_SCOPE)
+  set(last_status "${status}" PARENT_SCOPE)
+endfunction()
+write_run("${work}/baseline.json" 100 100 100 100)
+write_run("${work}/small.json" 96 100 100 100)
+write_run("${work}/mixed.json" 96 89 111 116)
+check_gate(small pass)
+check_gate(mixed fail)
+execute_process(COMMAND "${LONEJSON_BENCH_EXE}" compare "${work}/baseline.json" "${work}/mixed.json"
+  RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT status EQUAL 0)
+  message(FATAL_ERROR "comparison failed: ${output}\n${error}")
 endif()
-foreach(_needle
-    "small regressions: 1"
-    "material regressions: 1"
-    "large improvements to review: 1")
-  if(NOT _gate_out MATCHES "${_needle}")
-    message(FATAL_ERROR "bench gate output missing ${_needle}:\n${_gate_out}\n${_gate_err}")
+foreach(label small-reg material-reg material-imp review-imp)
+  if(NOT output MATCHES "${label}")
+    message(FATAL_ERROR "missing classification ${label}: ${output}")
   endif()
 endforeach()
-
-execute_process(
-  COMMAND "${LONEJSON_BENCH_EXE}" gate "${_baseline}" "${_latest_small}"
-  RESULT_VARIABLE _small_status
-  OUTPUT_VARIABLE _small_out
-  ERROR_VARIABLE _small_err)
-if(NOT _small_status EQUAL 0)
-  message(FATAL_ERROR "bench gate unexpectedly failed on small-only regressions:\n${_small_out}\n${_small_err}")
-endif()
-if(NOT _small_out MATCHES "small regressions: 1")
-  message(FATAL_ERROR "bench gate output missing small regression review count:\n${_small_out}")
+file(READ "${work}/baseline.json" baseline)
+string(JSON lua_baseline SET "${baseline}" schema_version 30)
+file(WRITE "${work}/lua-baseline.json" "${lua_baseline}")
+execute_process(COMMAND "${LONEJSON_BENCH_EXE}" gate "${work}/lua-baseline.json" "${work}/lua-baseline.json"
+  RESULT_VARIABLE lua_status OUTPUT_QUIET ERROR_VARIABLE lua_error)
+if(NOT lua_status EQUAL 0)
+  message(FATAL_ERROR "shared Lua report gate failed: ${lua_error}")
 endif()
 
-execute_process(
-  COMMAND "${LONEJSON_BENCH_EXE}" gate "${_baseline}" "${_latest_improve}"
-  RESULT_VARIABLE _improve_status
-  OUTPUT_VARIABLE _improve_out
-  ERROR_VARIABLE _improve_err)
-if(NOT _improve_status EQUAL 0)
-  message(FATAL_ERROR "bench gate unexpectedly failed on pure improvements:\n${_improve_out}\n${_improve_err}")
-endif()
-if(NOT _improve_out MATCHES "large improvements to review: 1")
-  message(FATAL_ERROR "bench gate output missing improvement review count:\n${_improve_out}")
-endif()
 
-execute_process(
-  COMMAND "${LONEJSON_BENCH_EXE}" compare "${_baseline}" "${_latest_broken}"
-  RESULT_VARIABLE _broken_compare_status
-  OUTPUT_VARIABLE _broken_compare_out
-  ERROR_VARIABLE _broken_compare_err)
-if(NOT _broken_compare_status EQUAL 0)
-  message(FATAL_ERROR "bench compare failed unexpectedly on broken data:\n${_broken_compare_out}\n${_broken_compare_err}")
+foreach(field host compiler toolchain affinity method)
+  string(JSON changed SET "${baseline}" "${field}" "\"different\"")
+  file(WRITE "${work}/environment.json" "${changed}")
+  check_gate(environment fail)
+endforeach()
+foreach(field schema_version iterations sample_count process_count samples_per_process warmup_count target_sample_ns confidence_pct max_relative_error_pct max_drift_pct)
+  string(JSON changed SET "${baseline}" "${field}" "999")
+  file(WRITE "${work}/configuration.json" "${changed}")
+  check_gate(configuration fail)
+endforeach()
+# An error in a sample other than the first cannot be discarded by aggregation.
+string(JSON changed SET "${baseline}" results 0 samples 4 mismatch_count 1)
+string(JSON changed SET "${changed}" results 0 mismatch_count 1)
+file(WRITE "${work}/mismatch.json" "${changed}")
+check_gate(mismatch fail)
+# All reported values must be reproducible from the raw samples.
+string(JSON changed SET "${baseline}" results 0 mib_per_sec 200)
+file(WRITE "${work}/forged.json" "${changed}")
+check_gate(forged fail)
+string(JSON changed REMOVE "${baseline}" results 0 samples 8)
+file(WRITE "${work}/missing-sample.json" "${changed}")
+check_gate(missing-sample fail)
+string(JSON changed SET "${baseline}" results 0 samples 8 process_index 1)
+file(WRITE "${work}/missing-process.json" "${changed}")
+check_gate(missing-process fail)
+string(JSON changed REMOVE "${baseline}" results 3)
+file(WRITE "${work}/missing-lane.json" "${changed}")
+check_gate(missing-lane fail)
+file(READ "${CMAKE_CURRENT_LIST_DIR}/../tests/fixtures/bench_confidence_limit.json" uncertain)
+string(JSON changed SET "${baseline}" results 0 "${uncertain}")
+file(WRITE "${work}/uncertain.json" "${changed}")
+check_gate(uncertain fail)
+if(NOT last_status EQUAL 2 OR NOT last_output MATCHES "uncertain comparisons: 1")
+  message(FATAL_ERROR "passed without confidence of non-regression: ${last_output}")
 endif()
-if(NOT _broken_compare_out MATCHES "broken")
-  message(FATAL_ERROR "bench compare did not classify mismatching results as broken:\n${_broken_compare_out}")
+string(JSON changed SET "${baseline}" implementation_count 2)
+file(WRITE "${work}/different-context.json" "${changed}")
+check_gate(different-context fail)
+if(NOT last_output MATCHES "implementation-count mismatch")
+  message(FATAL_ERROR "compared isolated and paired measurement contexts: ${last_output}")
 endif()
-
-execute_process(
-  COMMAND "${LONEJSON_BENCH_EXE}" gate "${_baseline}" "${_latest_broken}"
-  RESULT_VARIABLE _broken_gate_status
-  OUTPUT_VARIABLE _broken_gate_out
-  ERROR_VARIABLE _broken_gate_err)
-if(_broken_gate_status EQUAL 0)
-  message(FATAL_ERROR "bench gate unexpectedly passed on mismatching results:\n${_broken_gate_out}\n${_broken_gate_err}")
+foreach(field mib_per_sec_low mib_per_sec_high relative_error_pct drift_ci_low_pct drift_ci_high_pct)
+  string(JSON changed SET "${baseline}" results 0 "${field}" 200)
+  file(WRITE "${work}/forged-bound.json" "${changed}")
+  check_gate(forged-bound fail)
+endforeach()
+# A correct mean does not excuse unstable samples; summaries here are exact.
+set(changed "${baseline}")
+foreach(sample RANGE 0 398)
+  math(EXPR group "${sample} / 133 + 1")
+  math(EXPR elapsed "${group} * 500000000")
+  string(JSON changed SET "${changed}" results 0 samples ${sample} elapsed_ns "${elapsed}")
+  string(JSON changed SET "${changed}" results 0 samples ${sample} cpu_ns "${elapsed}")
+endforeach()
+string(JSON changed SET "${changed}" results 0 cv_pct 40.87608434472148)
+string(JSON changed SET "${changed}" results 0 relative_error_pct 4.194014926537992)
+string(JSON changed SET "${changed}" results 0 mib_per_sec_low 96.13055525391215)
+string(JSON changed SET "${changed}" results 0 mib_per_sec_high 104.19401492653799)
+string(JSON changed SET "${changed}" results 0 drift_pct 200)
+string(JSON changed SET "${changed}" results 0 drift_ci_low_pct 200)
+string(JSON changed SET "${changed}" results 0 drift_ci_high_pct 200)
+file(WRITE "${work}/unstable.json" "${changed}")
+check_gate(unstable fail)
+if(NOT last_status EQUAL 2 OR NOT last_output MATCHES "inconclusive: confidence bounds")
+  message(FATAL_ERROR "instability was not diagnosed: ${last_output}")
 endif()
-foreach(_needle
-    "result mismatches: 1"
-    "benchmark gate failed: benchmark case mismatches must be zero before landing")
-  if(NOT "${_broken_gate_out}${_broken_gate_err}" MATCHES "${_needle}")
-    message(FATAL_ERROR "bench gate output missing ${_needle}:\n${_broken_gate_out}\n${_broken_gate_err}")
+# Even a large mean change is inconclusive when its samples are unstable.
+foreach(sample RANGE 0 398)
+  math(EXPR group "${sample} / 133 + 1")
+  math(EXPR elapsed "${group} * 1000000000")
+  string(JSON changed SET "${changed}" results 0 samples ${sample} elapsed_ns "${elapsed}")
+  string(JSON changed SET "${changed}" results 0 samples ${sample} cpu_ns "${elapsed}")
+endforeach()
+string(JSON changed SET "${changed}" results 0 elapsed_ns 2000000000)
+string(JSON changed SET "${changed}" results 0 mib_per_sec 50)
+string(JSON changed SET "${changed}" results 0 docs_per_sec 50)
+string(JSON changed SET "${changed}" results 0 ns_per_byte 19.073486328125)
+string(JSON changed SET "${changed}" results 0 mib_per_sec_low 48.065277626956075)
+string(JSON changed SET "${changed}" results 0 mib_per_sec_high 52.097007463268994)
+file(WRITE "${work}/unstable-drop.json" "${changed}")
+check_gate(unstable-drop fail)
+if(NOT last_status EQUAL 2 OR NOT last_output MATCHES "material regressions: 0")
+  message(FATAL_ERROR "classified unstable samples as a regression: ${last_output}")
+endif()
+# Frozen references must be valid measurements, not merely the last JSON line.
+file(WRITE "${work}/history.jsonl" "${changed}\n")
+execute_process(COMMAND "${LONEJSON_BENCH_EXE}" freeze-baseline "${work}/history.jsonl" "${work}/refused.json"
+  RESULT_VARIABLE status OUTPUT_QUIET ERROR_QUIET)
+if(status EQUAL 0)
+  message(FATAL_ERROR "froze an unstable reference")
+endif()
+file(WRITE "${work}/history.jsonl" "${baseline}\n")
+execute_process(COMMAND "${LONEJSON_BENCH_EXE}" freeze-baseline "${work}/history.jsonl" "${work}/frozen.json"
+  RESULT_VARIABLE status OUTPUT_QUIET ERROR_VARIABLE error)
+if(NOT status EQUAL 0)
+  message(FATAL_ERROR "could not freeze valid reference: ${error}")
+endif()
+foreach(field source_src_tree source_include_tree source_lua_tree source_revision)
+  if(field STREQUAL "source_revision")
+    set(invalid "fixture:dirty")
+  else()
+    set(invalid "unversioned")
+  endif()
+  string(JSON unversioned SET "${baseline}" "${field}" "\"${invalid}\"")
+  file(WRITE "${work}/unversioned-history.jsonl" "${unversioned}\n")
+  execute_process(COMMAND "${LONEJSON_BENCH_EXE}" freeze-baseline "${work}/unversioned-history.jsonl" "${work}/refused.json"
+    RESULT_VARIABLE status OUTPUT_QUIET ERROR_QUIET)
+  if(status EQUAL 0)
+    message(FATAL_ERROR "froze an unreconstructable implementation: ${field}")
   endif()
 endforeach()
+file(APPEND "${work}/history.jsonl" "invalid final entry\n")
+execute_process(COMMAND "${LONEJSON_BENCH_EXE}" freeze-baseline "${work}/history.jsonl" "${work}/refused.json"
+  RESULT_VARIABLE status OUTPUT_QUIET ERROR_QUIET)
+if(status EQUAL 0)
+  message(FATAL_ERROR "ignored a malformed final history entry and froze an older run")
+endif()
+message(STATUS "Benchmark gate correctness, comparability, samples, processes, stability and reference checks passed")
+
+# Optional lua-cjson comparisons are informational in the shared gate as well.
+write_run("${work}/info-base.json" 100 100 100 100)
+write_run("${work}/info-current.json" 100 100 100 50)
+foreach(path "${work}/info-base.json" "${work}/info-current.json")
+  file(READ "${path}" report)
+  string(JSON report SET "${report}" results 3 name "\"decode/cjson\"")
+  file(WRITE "${path}" "${report}")
+endforeach()
+execute_process(COMMAND "${LONEJSON_BENCH_EXE}" gate "${work}/info-base.json" "${work}/info-current.json"
+  RESULT_VARIABLE info_status OUTPUT_QUIET ERROR_VARIABLE info_error)
+if(NOT info_status EQUAL 0)
+  message(FATAL_ERROR "informational lane blocked the gate: ${info_error}")
+endif()
+# Quick release preflight must honor the same informational-lane policy.
+file(READ "${work}/unstable.json" noisy)
+string(JSON noisy_case GET "${noisy}" results 0)
+string(JSON noisy_case SET "${noisy_case}" name "\"decode/cjson\"")
+file(READ "${work}/info-base.json" info)
+string(JSON info SET "${info}" results 3 "${noisy_case}")
+string(JSON info SET "${info}" results 0 name "\"validate/corpus/lonejson\"")
+string(JSON info SET "${info}" results 1 name "\"parse/buffer_fixed/lonejson\"")
+string(JSON info SET "${info}" results 2 name "\"parse/buffer_dynamic/lonejson\"")
+string(JSON info SET "${info}" results 0 target_sample_ns 1500000)
+foreach(index RANGE 1 2)
+  string(JSON info SET "${info}" results ${index} target_sample_ns 2040000)
+endforeach()
+file(WRITE "${work}/info-noisy.json" "${info}")
+execute_process(COMMAND "${CMAKE_COMMAND}"
+  "-DPOLICY_HEADER=${CMAKE_CURRENT_LIST_DIR}/../bench/lonejson_measure.h"
+  "-DC_BASELINE=${work}/info-noisy.json" "-DLUA_BASELINE=${work}/info-noisy.json"
+  -P "${CMAKE_CURRENT_LIST_DIR}/check_benchmark_baselines.cmake"
+  RESULT_VARIABLE preflight_status OUTPUT_QUIET ERROR_VARIABLE preflight_error)
+if(NOT preflight_status EQUAL 0)
+  message(FATAL_ERROR "informational lane blocked preflight: ${preflight_error}")
+endif()
+
+string(JSON changed SET "${baseline}" results 0 target_sample_ns 30000000)
+file(WRITE "${work}/case-budget.json" "${changed}")
+check_gate(case-budget fail)
+if(NOT last_output MATCHES "case budget mismatch")
+  message(FATAL_ERROR "case policy change was not diagnosed: ${last_output}")
+endif()
+
+string(JSON changed REMOVE "${baseline}" results 0 target_sample_ns)
+file(WRITE "${work}/missing-case-budget.json" "${changed}")
+check_gate(missing-case-budget fail)

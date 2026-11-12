@@ -20,7 +20,6 @@ guides run from the source checkout unless a guide says otherwise.
 - [Public C header](https://github.com/c89systems/lonejson/blob/trunk/include/lonejson.h)
 - [Full Lua manual](https://github.com/c89systems/lonejson/blob/trunk/lua/README.md)
 - [Runnable examples](https://github.com/c89systems/lonejson/blob/trunk/examples/README.md)
-- [Local verification contract](local-verification.md)
 - [Receiver API coverage](receiver-api.md)
 - [Third-party integration contract](third-party-integrations.md)
 - [Authentication API reference](auth-implementation.md)

@@ -68,6 +68,71 @@ local function exists(path)
   return true
 end
 
+local function test_record_method_lookup_dispatch()
+  local runtime = lonejson.new()
+  local schema = runtime.schema("MethodLookupDispatch", {
+    runtime.field("getaway", runtime.string { fixed_capacity = 16 }),
+    runtime.field("garden", runtime.i64()),
+    runtime.field("title", runtime.string { fixed_capacity = 16 }),
+    runtime.field("to_tableau", runtime.bool()),
+    runtime.field("counter", runtime.i64()),
+    runtime.field("clearance", runtime.string { fixed_capacity = 16 }),
+    runtime.field("get", runtime.string { fixed_capacity = 16 }),
+    runtime.field("numbers", runtime.i64_array { fixed_capacity = 4 }),
+  })
+  local record = schema:new_record()
+  schema:assign(record, {getaway = "g", garden = 17, title = "t",
+    to_tableau = true, counter = 9, clearance = "c", get = "shadow",
+    numbers = {3, 5}})
+  assert(record.getaway == "g" and record.garden == 17)
+  assert(record.title == "t" and record.to_tableau == true)
+  assert(record.counter == 9 and record.clearance == "c")
+  local ok, err = pcall(function() return record.unknown end)
+  assert(not ok and err:find("unknown field", 1, true))
+  assert(type(record.get) == "function" and record:get("get") == "shadow")
+  assert(record:get("title") == "t" and record:count("numbers") == 2)
+  local values = record:to_table()
+  assert(values.getaway == "g" and values.numbers[2] == 5)
+  record:clear()
+  assert(record.garden == 0 and record.title == "")
+  assert(record.to_tableau == false and record:count("numbers") == 0)
+end
+test_record_method_lookup_dispatch()
+
+local function test_record_path_errors()
+  local runtime = lonejson.new()
+  local schema = runtime.schema("PathErrors", {
+    runtime.field("value", runtime.i64()),
+    runtime.field("numbers", runtime.i64_array { fixed_capacity = 4 }),
+    runtime.field("child", runtime.object { fields = {
+      runtime.field("value", runtime.i64()),
+    } }),
+  })
+  local record = schema:new_record()
+  schema:assign(record, {value = 7, numbers = {3}, child = {value = 11}})
+  local cases = {
+    {string.rep("x", 128), "path segment too long"},
+    {".value", "malformed record path"},
+    {"unknown", "unknown field"},
+    {"child.unknown", "unknown field"},
+    {"numbers[1", "malformed array index"},
+    {"numbers[1].value", "not an object array"},
+    {"value.child", "not an object"},
+    {"numbers[1]extra", "malformed record path"},
+    {"value[1]", "not an array"},
+  }
+  for _, case in ipairs(cases) do
+    for _ = 1, 2 do
+      local ok, err = pcall(function() schema:compile_path(case[1]) end)
+      assert(not ok and err:find(case[2], 1, true), tostring(err))
+      ok, err = pcall(function() return record:get(case[1]) end)
+      assert(not ok and err:find(case[2], 1, true), tostring(err))
+    end
+  end
+  assert(record:get("child.value") == 11 and record.value == 7)
+end
+test_record_path_errors()
+
 assert_eq(lonejson.base64_encode("Hello"), "SGVsbG8=")
 assert_eq(lonejson.base64_encode("\255", "url_raw"), "_w")
 assert_eq(lonejson.base64_decode("SGVsbG8="), "Hello")

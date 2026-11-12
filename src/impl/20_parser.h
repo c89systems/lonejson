@@ -32,7 +32,10 @@ lonejson__scratch_append_bytes(lonejson_scratch *scratch,
   if (!lonejson__scratch_reserve(scratch, scratch->len + len + 1u)) {
     return 0;
   }
-  memcpy(scratch->data + scratch->len, src, len);
+  if (len == 1u)
+    scratch->data[scratch->len] = (char)*src;
+  else
+    memcpy(scratch->data + scratch->len, src, len);
   scratch->len += len;
   return 1;
 }

@@ -90,7 +90,8 @@ reject_text() {
 require_text 'release-pipeline'
 require_text 'prerelease: release-pipeline'
 require_text 'prerelease-hardening: prerelease'
-reject_text '+$(TIME_STEP) hardening/bench-check $(MAKE) bench-check'
+require_text '+$(TIME_STEP) hardening/bench-check $(MAKE) bench-check'
+reject_text '+$(TIME_STEP) prerelease/bench-check $(MAKE) bench-check'
 require_text 'release-pipeline:'
 require_text '+$(TIME_STEP) prerelease/format $(MAKE) format-check'
 require_text '+$(TIME_STEP) prerelease/test $(MAKE) test'
@@ -104,6 +105,7 @@ require_text 'lifecycle-version-contract:'
 require_text 'bash ./scripts/check_release_identity.sh'
 require_text 'release:'
 require_text '+$(TIME_STEP) release/version-contract $(MAKE) lifecycle-version-contract'
+require_text '+$(TIME_STEP) release/baselines $(MAKE) release-baseline-check'
 require_text '+$(TIME_STEP) release/clean $(MAKE) clean'
 require_text '+$(TIME_STEP) release/pipeline $(MAKE) release-pipeline'
 
@@ -131,6 +133,7 @@ package_checksums_line=$(line_number '+$(TIME_STEP) release/package-checksums $(
 package_verify_line=$(line_number '+$(TIME_STEP) release/package-verify $(MAKE) package-verify')
 clean_line=$(line_number '+$(TIME_STEP) release/clean $(MAKE) clean')
 version_contract_line=$(line_number '+$(TIME_STEP) release/version-contract $(MAKE) lifecycle-version-contract')
+baseline_line=$(line_number '+$(TIME_STEP) release/baselines $(MAKE) release-baseline-check')
 pipeline_line=$(line_number '+$(TIME_STEP) release/pipeline $(MAKE) release-pipeline')
 
 if (( format_line >= test_line || test_line >= matrix_line )); then
@@ -138,8 +141,8 @@ if (( format_line >= test_line || test_line >= matrix_line )); then
   exit 1
 fi
 
-if (( version_contract_line >= clean_line || clean_line >= pipeline_line || pipeline_line >= source_smoke_line || source_smoke_line >= package_checksums_line || package_checksums_line >= package_verify_line )); then
-  printf 'release must run lifecycle-version-contract, then clean, pipeline, source-smoke, package-checksums and package-verify\n' >&2
+if (( version_contract_line >= baseline_line || baseline_line >= clean_line || clean_line >= pipeline_line || pipeline_line >= source_smoke_line || source_smoke_line >= package_checksums_line || package_checksums_line >= package_verify_line )); then
+  printf 'release must check identity and baselines before clean, pipeline and packaging\n' >&2
   exit 1
 fi
 
@@ -166,13 +169,13 @@ MOCK_TIME
 chmod +x "$workspace/make" "$workspace/time"
 export TEST_RELEASE_GRAPH_LOG="$workspace/graph"
 export TEST_REAL_MAKE="$(command -v make)" TEST_REPO_ROOT="$repo_root" TEST_TIME_STEP="$workspace/time"
-proof=(format-check test asan tsan valgrind test-e2e fuzz-smoke bench-check release-matrix)
+proof=(format-check test asan tsan valgrind test-e2e fuzz-smoke release-matrix)
 make -s -C "$repo_root" MAKE="$workspace/make" TIME_STEP="$workspace/time" prerelease
 printf '%s\n' "${proof[@]}" >"$workspace/expected"
 diff -u "$workspace/expected" "$workspace/graph"
 : >"$workspace/graph"
 make -s -C "$repo_root" MAKE="$workspace/make" TIME_STEP="$workspace/time" release
-printf '%s\n' lifecycle-version-contract clean release-pipeline "${proof[@]}" package-source-smoke package-checksums package-verify >"$workspace/expected"
+printf '%s\n' lifecycle-version-contract release-baseline-check clean release-pipeline "${proof[@]}" package-source-smoke package-checksums package-verify >"$workspace/expected"
 diff -u "$workspace/expected" "$workspace/graph"
 : >"$workspace/graph"
 if TEST_RELEASE_GRAPH_FAIL=lifecycle-version-contract make -s -C "$repo_root" MAKE="$workspace/make" TIME_STEP="$workspace/time" release >"$workspace/failure.log" 2>&1; then
@@ -182,12 +185,64 @@ printf '%s\n' lifecycle-version-contract >"$workspace/expected"
 diff -u "$workspace/expected" "$workspace/graph"
 
 # Every proof stage is executed once, and every failure prevents later stages.
+baseline_c=$(git -C "$repo_root" ls-files 'perflogs/hosts/*/baseline.json' | head -n 1)
+baseline_lua="${baseline_c%/baseline.json}/lua/baseline.json"
+mkdir -p "$source_root/bench" "$source_root/perflogs/test/lua"
+cp "$repo_root/bench/lonejson_measure.h" "$repo_root/bench/workloads.tsv" "$source_root/bench/"
+cp "$repo_root/cmake/check_benchmark_baselines.cmake" "$source_root/cmake/"
+fixture_samples='{}'
+for index in {2..399}; do fixture_samples+=',{}'; done
+fixture_reference=$(printf '{"method":"whole-suite-mean","source_revision":"fixture","source_src_tree":"0000000000000000000000000000000000000000","source_include_tree":"0000000000000000000000000000000000000000","source_lua_tree":"0000000000000000000000000000000000000000","implementation_count":1,"host":"fixture","compiler":"fixture","toolchain":"fixture","affinity":"fixture","sample_count":399,"process_count":399,"samples_per_process":1,"warmup_count":1,"target_sample_ns":12000000,"confidence_pct":95,"max_relative_error_pct":5,"max_drift_pct":5,"results":[{"name":"validate/corpus/lonejson","target_sample_ns":1500000,"mismatch_count":0,"cv_pct":0,"drift_pct":0,"relative_error_pct":0,"drift_ci_low_pct":0,"drift_ci_high_pct":0,"mib_per_sec_low":1,"mib_per_sec_high":1,"samples":[%s]}]}' "$fixture_samples")
+printf '%s\n' "$fixture_reference" >"$source_root/perflogs/test/baseline.json"
+cp "$source_root/perflogs/test/baseline.json" "$source_root/perflogs/test/lua/baseline.json"
+git -C "$source_root" init -q
+git -C "$source_root" config user.name 'Benchmark fixture'
+git -C "$source_root" config user.email fixture@example.invalid
+git -C "$source_root" add perflogs
+git -C "$source_root" commit -q -m 'test(bench): record compatible reference fixtures'
+make -s -C "$source_root" release-baseline-check \
+  PERF_BASELINE="$source_root/perflogs/test/baseline.json" LUA_PERF_BASELINE="$source_root/perflogs/test/lua/baseline.json"
+printf '{}\n' >"$source_root/perflogs/test/baseline.json"
+if make -s -C "$source_root" release-baseline-check \
+    PERF_BASELINE="$source_root/perflogs/test/baseline.json" LUA_PERF_BASELINE="$source_root/perflogs/test/lua/baseline.json" \
+    >"$workspace/incompatible.log" 2>&1; then
+  printf 'release accepted an incompatible measurement reference\n' >&2; exit 1
+fi
+grep -F 'incompatible benchmark reference' "$workspace/incompatible.log" >/dev/null
+for lane in c lua; do
+  c_path="$repo_root/$baseline_c" lua_path="$repo_root/$baseline_lua"
+  if [[ "$lane" == c ]]; then c_path="$workspace/missing.json";
+  else lua_path="$workspace/missing.json"; fi
+  if make -s -C "$repo_root" release-baseline-check PERF_BASELINE="$c_path" \
+      LUA_PERF_BASELINE="$lua_path" >"$workspace/baselines.log" 2>&1; then
+    printf 'release accepted a missing %s benchmark baseline\n' "$lane" >&2; exit 1
+  fi
+  grep -F 'missing frozen release benchmark baseline' "$workspace/baselines.log" >/dev/null
+done
+printf '{}\n' >"$workspace/untracked.json"
+if make -s -C "$repo_root" release-baseline-check \
+    PERF_BASELINE="$workspace/untracked.json" LUA_PERF_BASELINE="$repo_root/$baseline_lua" \
+    >"$workspace/baselines.log" 2>&1; then
+  printf 'release accepted an uncommitted benchmark baseline\n' >&2; exit 1
+fi
+grep -F 'must be recorded in HEAD' "$workspace/baselines.log" >/dev/null
+
 for target in prerelease prerelease-hardening; do
   : >"$workspace/graph"
   make -s -C "$repo_root" MAKE="$workspace/make" TIME_STEP="$workspace/time" "$target"
   printf '%s\n' "${proof[@]}" >"$workspace/expected"
+  if [[ "$target" == prerelease-hardening ]]; then
+    printf '%s\n' bench-check >>"$workspace/expected"
+  fi
   diff -u "$workspace/expected" "$workspace/graph"
 done
+: >"$workspace/graph"
+if TEST_RELEASE_GRAPH_FAIL=bench-check make -s -C "$repo_root" \
+    MAKE="$workspace/make" TIME_STEP="$workspace/time" prerelease-hardening >"$workspace/failure.log" 2>&1; then
+  printf 'prerelease-hardening ignored a benchmark failure\n' >&2; exit 1
+fi
+printf '%s\n' "${proof[@]}" bench-check >"$workspace/expected"
+diff -u "$workspace/expected" "$workspace/graph"
 for index in "${!proof[@]}"; do
   : >"$workspace/graph"
   if TEST_RELEASE_GRAPH_FAIL="${proof[index]}" make -s -C "$repo_root" \
@@ -198,7 +253,7 @@ for index in "${!proof[@]}"; do
   diff -u "$workspace/expected" "$workspace/graph"
 done
 
-release_steps=(lifecycle-version-contract clean release-pipeline "${proof[@]}" package-source-smoke package-checksums package-verify)
+release_steps=(lifecycle-version-contract release-baseline-check clean release-pipeline "${proof[@]}" package-source-smoke package-checksums package-verify)
 for index in "${!release_steps[@]}"; do
   : >"$workspace/graph"
   if TEST_RELEASE_GRAPH_FAIL="${release_steps[index]}" make -s -C "$repo_root" \
@@ -229,7 +284,6 @@ cmake --build --preset debug --target lonejson_tests lonejson_value_visitor_stre
 ctest --no-tests=error --preset debug --output-on-failure -R ^lonejson_(tests|value_visitor_stream_tests|map_cache_no_tls_tests|short_names_tests|short_names_disabled_tests|static_link_tests|shared_link_tests|single_header_version_tests|single_header_release_version_tests|library_exports_tests)$
 abi-check
 lua-test
-format-check
 EXPECTED
 diff -u "$workspace/expected" "$workspace/graph"
 cp "$workspace/expected" "$workspace/slice-expected"

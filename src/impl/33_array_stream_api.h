@@ -103,7 +103,10 @@ static lonejson_status lonejson__byte_append(lonejson__byte_buffer *buffer,
   if (status != LONEJSON_STATUS_OK) {
     return status;
   }
-  memcpy(buffer->data + buffer->len, data, len);
+  if (len == 1u)
+    buffer->data[buffer->len] = *(const char *)data;
+  else
+    memcpy(buffer->data + buffer->len, data, len);
   buffer->len += len;
   buffer->data[buffer->len] = '\0';
   return LONEJSON_STATUS_OK;
@@ -1471,6 +1474,7 @@ lonejson_array_stream_open_reader(lonejson *runtime, const char *path,
   const lonejson_runtime *runtime_state;
   lonejson_array_stream *stream;
 
+  lonejson__clear_error(error);
   runtime_state = lonejson__runtime_owner_pin_const_nohook(
       (const lonejson *)runtime, &borrow);
   if (runtime_state == NULL) {
@@ -1493,6 +1497,7 @@ lonejson_array_stream *lonejson_array_stream_open_filep(lonejson *runtime,
   const lonejson_runtime *runtime_state;
   lonejson_array_stream *stream;
 
+  lonejson__clear_error(error);
   runtime_state = lonejson__runtime_owner_pin_const_nohook(
       (const lonejson *)runtime, &borrow);
   if (runtime_state == NULL) {
@@ -1515,6 +1520,7 @@ lonejson_array_stream *lonejson_array_stream_open_path(lonejson *runtime,
   const lonejson_runtime *runtime_state;
   lonejson_array_stream *stream;
 
+  lonejson__clear_error(error);
   runtime_state = lonejson__runtime_owner_pin_const_nohook(
       (const lonejson *)runtime, &borrow);
   if (runtime_state == NULL) {
@@ -1536,6 +1542,7 @@ lonejson_array_stream *lonejson_array_stream_open_fd(lonejson *runtime,
   const lonejson_runtime *runtime_state;
   lonejson_array_stream *stream;
 
+  lonejson__clear_error(error);
   runtime_state = lonejson__runtime_owner_pin_const_nohook(
       (const lonejson *)runtime, &borrow);
   if (runtime_state == NULL) {
@@ -1557,6 +1564,7 @@ lonejson_array_stream *lonejson_array_stream_open_push(lonejson *runtime,
   const lonejson_runtime *runtime_state;
   lonejson_array_stream *stream;
 
+  lonejson__clear_error(error);
   runtime_state = lonejson__runtime_owner_pin_const_nohook(
       (const lonejson *)runtime, &borrow);
   if (runtime_state == NULL) {
@@ -2349,7 +2357,10 @@ static lonejson_status lonejson__array_stream_push_string_items_common(
     lonejson__array_stream_state *stream, const void *bytes, size_t len,
     lonejson_array_stream_string_fn callback, void *user, int finish,
     lonejson_error *error) {
-  lonejson_array_stream_string_handler handler;
+  static const lonejson_array_stream_string_handler handler = {
+      lonejson__array_stream_string_item_begin,
+      lonejson__array_stream_string_item_chunk,
+      lonejson__array_stream_string_item_end};
   lonejson__value_limits limits;
 
   if (stream == NULL || callback == NULL) {
@@ -2364,10 +2375,6 @@ static lonejson_status lonejson__array_stream_push_string_items_common(
   }
   stream->string_callback = callback;
   stream->string_callback_user = user;
-  memset(&handler, 0, sizeof(handler));
-  handler.begin = lonejson__array_stream_string_item_begin;
-  handler.chunk = lonejson__array_stream_string_item_chunk;
-  handler.end = lonejson__array_stream_string_item_end;
   return lonejson__array_stream_push_string_common(stream, bytes, len, &handler,
                                                    stream, finish, error);
 }

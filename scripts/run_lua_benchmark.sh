@@ -6,6 +6,7 @@ build_dir=${2:?usage: run_lua_benchmark.sh REPO_ROOT BUILD_DIR SCRIPT [ARGUMENT.
 script_path=${3:?usage: run_lua_benchmark.sh REPO_ROOT BUILD_DIR SCRIPT [ARGUMENT...]}
 shift 3
 cd "$repo_root"
+export LONEJSON_BENCH_TOOLCHAIN_FILE="$build_dir/benchmark-toolchain.json"
 
 if [[ "$(uname -s)" == Linux ]]; then
   runner="$build_dir/lonejson_lua_target_runner"
@@ -18,7 +19,7 @@ if [[ "$(uname -s)" == Linux ]]; then
     printf 'missing production Lua benchmark module under %s\n' "$module_build_dir" >&2
     exit 1
   fi
-  exec env LONEJSON_LUA_TARGET_RUNNER="$runner" \
+  exec "$repo_root/scripts/run_benchmark.sh" env LONEJSON_LUA_TARGET_RUNNER="$runner" \
     LONEJSON_LUA_SOURCE_DIR="$repo_root" LONEJSON_LUA_BUILD_DIR="$module_build_dir" \
     "$runner" "$repo_root" "$module_build_dir" -- "$script_path" "$@"
 fi
@@ -30,5 +31,5 @@ lua_library_dir=${LONEJSON_LUA_BENCH_LIBDIR:?set LONEJSON_LUA_BENCH_LIBDIR}
 
 resolved_environment=$("$luarocks_bin" path --tree "$lua_tree") || exit $?
 eval "$resolved_environment"
-exec env DYLD_LIBRARY_PATH="$lua_library_dir:${DYLD_LIBRARY_PATH-}" \
+exec "$repo_root/scripts/run_benchmark.sh" env DYLD_LIBRARY_PATH="$lua_library_dir:${DYLD_LIBRARY_PATH-}" \
   "$lua_bin" "$script_path" "$@"

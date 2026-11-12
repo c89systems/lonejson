@@ -70,6 +70,7 @@ static int lonejson__parse_i64_token(const char *value, lonejson_int64 *out) {
   lonejson_uint64 max_u64;
   lonejson_uint64 limit;
   lonejson_uint64 acc;
+  lonejson_uint64 cutoff, last_digit;
   int negative;
 
   if (value == NULL || out == NULL || *value == '\0') {
@@ -86,8 +87,14 @@ static int lonejson__parse_i64_token(const char *value, lonejson_int64 *out) {
   if (*p == '0' && p[1] != '\0') {
     return 0;
   }
+  if (p[1] == '\0' && lonejson__is_digit(*p)) {
+    *out = negative ? -(lonejson_int64)(*p - '0') : (lonejson_int64)(*p - '0');
+    return 1;
+  }
   max_u64 = (lonejson_uint64) ~(lonejson_uint64)0u;
   limit = negative ? ((max_u64 >> 1u) + 1u) : (max_u64 >> 1u);
+  cutoff = limit / 10u;
+  last_digit = limit % 10u;
   acc = 0u;
   while (*p != '\0') {
     lonejson_uint64 digit;
@@ -96,7 +103,7 @@ static int lonejson__parse_i64_token(const char *value, lonejson_int64 *out) {
       return 0;
     }
     digit = (lonejson_uint64)(*p - '0');
-    if (acc > (limit - digit) / 10u) {
+    if (acc > cutoff || (acc == cutoff && digit > last_digit)) {
       return 0;
     }
     acc = (acc * 10u) + digit;
@@ -118,6 +125,7 @@ static int lonejson__parse_u64_token(const char *value, lonejson_uint64 *out) {
   const unsigned char *p;
   lonejson_uint64 max_u64;
   lonejson_uint64 acc;
+  lonejson_uint64 cutoff, last_digit;
 
   if (value == NULL || out == NULL || *value == '\0' || *value == '-') {
     return 0;
@@ -126,7 +134,13 @@ static int lonejson__parse_u64_token(const char *value, lonejson_uint64 *out) {
   if (*p == '0' && p[1] != '\0') {
     return 0;
   }
+  if (p[1] == '\0' && lonejson__is_digit(*p)) {
+    *out = (lonejson_uint64)(*p - '0');
+    return 1;
+  }
   max_u64 = (lonejson_uint64) ~(lonejson_uint64)0u;
+  cutoff = max_u64 / 10u;
+  last_digit = max_u64 % 10u;
   acc = 0u;
   while (*p != '\0') {
     lonejson_uint64 digit;
@@ -135,7 +149,7 @@ static int lonejson__parse_u64_token(const char *value, lonejson_uint64 *out) {
       return 0;
     }
     digit = (lonejson_uint64)(*p - '0');
-    if (acc > (max_u64 - digit) / 10u) {
+    if (acc > cutoff || (acc == cutoff && digit > last_digit)) {
       return 0;
     }
     acc = (acc * 10u) + digit;
@@ -1401,9 +1415,10 @@ lonejson__json_value_string_begin(lonejson_parser *parser, int is_key) {
 
 static lonejson_status
 lonejson__json_value_string_chunk(lonejson_parser *parser, const char *data,
-                                  size_t len) {
+                                  size_t len, int already_plain) {
   lonejson_json_value *value = parser->json_stream_value;
   lonejson__json_parse_capture_sink_state capture_state;
+  lonejson_status status;
   size_t limit;
   const char *msg;
 
@@ -1423,6 +1438,19 @@ lonejson__json_value_string_chunk(lonejson_parser *parser, const char *data,
     parser->json_stream_text_bytes += len;
     capture_state.parser = parser;
     capture_state.value = value;
+    /* The lexer has already excluded quotes, escapes and control bytes from
+     * a plain span. Decoded escapes still need the escaping path below. */
+    if (already_plain) {
+      if (len == 0u)
+        return LONEJSON_STATUS_OK;
+      status =
+          (parser->json_stream_sink_active ? value->parse_sink
+                                           : lonejson__json_buffer_sink_parse)(
+              parser->json_stream_sink_active ? value->parse_sink_user
+                                              : &capture_state,
+              data, len, &parser->error);
+      return status == LONEJSON_STATUS_TRUNCATED ? LONEJSON_STATUS_OK : status;
+    }
     return lonejson__emit_escaped_fragment(
         parser->json_stream_sink_active ? value->parse_sink
                                         : lonejson__json_buffer_sink_parse,
@@ -1595,7 +1623,7 @@ static lonejson_status lonejson__assign_json_scalar(lonejson_parser *parser,
     case LONEJSON_LEX_STRING:
       status = lonejson__json_value_string_begin(parser, 0);
       if (status == LONEJSON_STATUS_OK) {
-        status = lonejson__json_value_string_chunk(parser, text, len);
+        status = lonejson__json_value_string_chunk(parser, text, len, 0);
       }
       if (status == LONEJSON_STATUS_OK) {
         status = lonejson__json_value_string_end(parser);
