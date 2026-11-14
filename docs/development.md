@@ -69,7 +69,7 @@ or the declared global cpkt cache. SDK archives use
 Acquisition verifies SHA-256 before extracting into checkout-local `.cache/`.
 
 The core JSON library has no cpkt API dependency. Optional curl/auth features
-and Lua use [`c89systems/cpkt` 0.6.1](https://github.com/c89systems/cpkt/releases/tag/v0.6.1),
+and Lua use [`c89systems/cpkt` 0.8.0](https://github.com/c89systems/cpkt/releases/tag/v0.8.0),
 including curl 8.22.0, OpenSSL 3.6.5 and Lua 5.5.1. Acquisition verifies package
 group, version and target. `LONEJSON_CPKT_ROOT` selects its independently
 extracted core SDK; do not merge provider prefixes. Neither `cpktdb` nor

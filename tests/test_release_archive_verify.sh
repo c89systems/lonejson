@@ -579,12 +579,12 @@ cat >"$package_root/share/lonejson/dependencies.json" <<'EOF'
   "dependencies": [
     {
       "target_id": "x86_64-linux-gnu",
-      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.6.1/cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
-      "sha256": "99625b7889f78b6e467d38e7dbec08d9d0ed6f599ff4571244060ce67c6ca62f",
-      "archive_name": "cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
+      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.8.0/cpkt-0.8.0-x86_64-linux-gnu.tar.gz",
+      "sha256": "7a9f2c1de42beec5fb324ac9c8b5a8005c17fb98003d9625eb5ad5ad228ba941",
+      "archive_name": "cpkt-0.8.0-x86_64-linux-gnu.tar.gz",
       "bundled": false,
       "name": "cpkt",
-      "version": "0.6.1",
+      "version": "0.8.0",
       "source_system": "GitHub release",
       "license": "MIT",
       "external": false,
@@ -596,9 +596,9 @@ cat >"$package_root/share/lonejson/dependencies.json" <<'EOF'
     },
     {
       "target_id": "x86_64-linux-gnu",
-      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.6.1/cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
-      "sha256": "99625b7889f78b6e467d38e7dbec08d9d0ed6f599ff4571244060ce67c6ca62f",
-      "archive_name": "cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
+      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.8.0/cpkt-0.8.0-x86_64-linux-gnu.tar.gz",
+      "sha256": "7a9f2c1de42beec5fb324ac9c8b5a8005c17fb98003d9625eb5ad5ad228ba941",
+      "archive_name": "cpkt-0.8.0-x86_64-linux-gnu.tar.gz",
       "bundled": false,
       "name": "curl",
       "version": "8.22.0",
@@ -609,9 +609,9 @@ cat >"$package_root/share/lonejson/dependencies.json" <<'EOF'
     },
     {
       "target_id": "x86_64-linux-gnu",
-      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.6.1/cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
-      "sha256": "99625b7889f78b6e467d38e7dbec08d9d0ed6f599ff4571244060ce67c6ca62f",
-      "archive_name": "cpkt-0.6.1-x86_64-linux-gnu.tar.gz",
+      "source_url": "https://github.com/c89systems/cpkt/releases/download/v0.8.0/cpkt-0.8.0-x86_64-linux-gnu.tar.gz",
+      "sha256": "7a9f2c1de42beec5fb324ac9c8b5a8005c17fb98003d9625eb5ad5ad228ba941",
+      "archive_name": "cpkt-0.8.0-x86_64-linux-gnu.tar.gz",
       "bundled": false,
       "name": "openssl",
       "version": "3.6.5",
@@ -628,7 +628,7 @@ EOF
 for defect in sha256 license bundled external version malformed; do
   cp "$package_root/share/lonejson/dependencies.json" "$tmp_dir/manifest-$defect.json"
   case "$defect" in
-    sha256) perl -pi -e 's/99625b78/00000000/g' "$tmp_dir/manifest-$defect.json" ;;
+    sha256) perl -pi -e 's/7a9f2c1d/00000000/g' "$tmp_dir/manifest-$defect.json" ;;
     license) perl -pi -e 's/Apache-2.0/MIT/' "$tmp_dir/manifest-$defect.json" ;;
     bundled) perl -pi -e 's/"bundled": false/"bundled": true/g' "$tmp_dir/manifest-$defect.json" ;;
     external) perl -pi -e 's/"external": true/"external": false/g' "$tmp_dir/manifest-$defect.json" ;;

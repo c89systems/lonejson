@@ -10,7 +10,7 @@ mkdir -p "$workspace_root/build"
 repo_root=$1
 tmp_dir=$(mktemp -d "$workspace_root/build/test_fetch_cpkt.XXXXXX")
 
-bundle_dir_name="cpkt-0.6.1-x86_64-linux-gnu"
+bundle_dir_name="cpkt-0.8.0-x86_64-linux-gnu"
 assets_dir="$tmp_dir/assets"
 bundle_root="$assets_dir/$bundle_dir_name"
 success_root="$tmp_dir/success-root"
@@ -40,7 +40,7 @@ trap cleanup EXIT
 
 mkdir -p "$bundle_root/share/cpkt/packages"
 cat >"$bundle_root/share/cpkt/packages/core.json" <<'EOF'
-{"group":"core","release_version":"0.6.1","target_id":"x86_64-linux-gnu"}
+{"group":"core","release_version":"0.8.0","target_id":"x86_64-linux-gnu"}
 EOF
 mkdir -p \
   "$bundle_root/include/curl" \
@@ -104,9 +104,9 @@ test ! -e "$success_root/.cache/cpkt/x86_64-linux-gnu/$bundle_dir_name.tar.gz"
 # A reusable extraction still has to carry the selected provider identity.
 manifest="$success_root/.cache/cpkt/x86_64-linux-gnu/root/share/cpkt/packages/core.json"
 cp "$manifest" "$tmp_dir/manifest.json"
-for wrong in '{"group":"db","release_version":"0.6.1","target_id":"x86_64-linux-gnu"}' \
-    '{"group":"core","release_version":"0.6.0","target_id":"x86_64-linux-gnu"}' \
-    '{"group":"core","release_version":"0.6.1","target_id":"aarch64-linux-gnu"}' \
+for wrong in '{"group":"db","release_version":"0.8.0","target_id":"x86_64-linux-gnu"}' \
+    '{"group":"core","release_version":"0.6.1","target_id":"x86_64-linux-gnu"}' \
+    '{"group":"core","release_version":"0.8.0","target_id":"aarch64-linux-gnu"}' \
     '{}'; do
   printf '%s\n' "$wrong" >"$manifest"
   if cmake -D "LONEJSON_SOURCE_DIR=$success_root" \
