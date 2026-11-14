@@ -1,0 +1,60 @@
+name: macOS native diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Apple Silicon C and Lua
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      LONEJSON_BUILD_JOBS: "3"
+      CMAKE_BUILD_PARALLEL_LEVEL: "3"
+      CTEST_PARALLEL_LEVEL: "1"
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the dispatched commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare native prerequisites
+        shell: /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          brew install bash cmake ninja make lua luarocks pkgconf coreutils
+          printf '%s\n' "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
+          printf '%s\n' "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          printf '%s\n' "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+          printf 'SDKROOT=%s\n' "$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - name: Identify source and Apple toolchain
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          bash tools/lifecycle/scripts/require-host-bash.sh
+          git rev-parse HEAD
+          sw_vers
+          xcode-select -p
+          xcrun --sdk macosx clang --version
+          ./scripts/cpkt-toolchains.sh discover arm64-apple-darwin
+          cmake --version
+          ninja --version
+          lua_bin=$(./scripts/resolve_lua55.sh)
+          "$lua_bin" -v
+          luarocks --version
+
+      - name: Build and test native Debug
+        run: make test
+
+      - name: Build and test native Release with curl and auth
+        run: make test-host-curl

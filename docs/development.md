@@ -82,6 +82,34 @@ osxcross is ready. `make release-matrix` tests runnable targets, packages SDKs
 and Lua products, then verifies those bytes. Missing required runners fail.
 Darwin cross proof covers build, linking and metadata, not macOS execution.
 
+### Optional native macOS diagnostics
+
+`.github/workflows/macos-native.yml` runs native Apple Silicon diagnostics on the
+standard `macos-15` GitHub runner. It is manual (`workflow_dispatch`) only: there
+are no push, pull-request, tag, or release triggers. Repository access is read-only,
+checkout credentials are not persisted, and no artifacts are uploaded or published.
+
+The job installs its Homebrew prerequisites, selects Bash 4.4+ through PATH, and
+uses the active Xcode/Apple tools and SDK with a macOS 15 deployment target. It
+records the exact checked-out commit and toolchain, then runs `make test` and
+`make test-host-curl` serially. These exercise native Debug and full-feature Release
+C/Lua tests; failures remain visible in the Actions logs. Native macOS does not
+run the Linux Valgrind or AFL++ gates, or the full performance comparison.
+
+GitHub requires the workflow file on the default branch before manual dispatch
+is available. Once it is registered and the selected development ref is already
+available remotely, an explicitly authorized run can be started with:
+
+```sh
+gh workflow run macos-native.yml --repo github.com/c89systems/lonejson --ref <existing-development-branch>
+```
+
+Adding this workflow does not authorize publishing refs to obtain CI feedback.
+Track the run's exact source commit and each test step's result; workflow linting
+or a queued run is not native execution proof. Hosted results are optional
+development diagnostics. The local lifecycle still owns required release tests,
+osxcross Darwin artifacts, signing, tagging, and publication.
+
 Run `make build` after checkout or cleanup to publish
 `build/debug/compile_commands.json` for `.clangd`, including generated headers
 and the Lua module. Check ordinary discovery with
